@@ -1,0 +1,24 @@
+# Runtime
+state/*
+!state/.gitkeep
+
+logs/
+tmp/
+
+# Editor
+.vscode/
+.idea/
+
+# Shell
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
