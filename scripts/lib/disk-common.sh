@@ -28,16 +28,6 @@ if ! declare -F is_removable_disk >/dev/null 2>&1; then
   source "${DISK_COMMON_LIB_DIR}/hardware.sh"
 fi
 
-default_btrfs_subvolumes() {
-  printf '%s\n' \
-    @ \
-    @home \
-    @var \
-    @log \
-    @cache \
-    @snapshots
-}
-
 resolve_disk_realpath() {
   local disk="$1"
 

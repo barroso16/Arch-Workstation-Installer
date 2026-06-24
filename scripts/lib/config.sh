@@ -32,6 +32,7 @@ set_config_defaults() {
   EFI_SIZE="${EFI_SIZE:-1G}"
   CRYPT_NAME="${CRYPT_NAME:-cryptroot}"
   BTRFS_COMPRESS="${BTRFS_COMPRESS:-zstd}"
+  BTRFS_LABEL="${BTRFS_LABEL:-ARCHROOT}"
 
   INSTALL_DEV_PROFILE="${INSTALL_DEV_PROFILE:-yes}"
   INSTALL_VIRT_PROFILE="${INSTALL_VIRT_PROFILE:-yes}"
@@ -132,6 +133,13 @@ validate_boolean_value() {
   is_yes "${value}" || is_no "${value}" || die "${label} debe ser yes/no, true/false o 1/0: ${value}"
 }
 
+validate_btrfs_label_value() {
+  local value="$1"
+
+  [[ ${#value} -ge 1 && ${#value} -le 64 ]] || die "BTRFS_LABEL debe tener entre 1 y 64 caracteres."
+  [[ "${value}" =~ ^[A-Za-z0-9._-]+$ ]] || die "BTRFS_LABEL contiene caracteres no validos: ${value}"
+}
+
 validate_install_config() {
   ensure_install_config_loaded
 
@@ -143,6 +151,7 @@ validate_install_config() {
   require_variable EFI_SIZE
   require_variable CRYPT_NAME
   require_variable BTRFS_COMPRESS
+  require_variable BTRFS_LABEL
 
   validate_hostname_value "${HOSTNAME}"
   validate_username_value "${USERNAME}"
@@ -152,6 +161,7 @@ validate_install_config() {
   validate_target_disk_value "${TARGET_DISK}"
   validate_size_value "${EFI_SIZE}" "EFI_SIZE"
   validate_shell_identifier "${CRYPT_NAME}" "CRYPT_NAME"
+  validate_btrfs_label_value "${BTRFS_LABEL}"
 
   case "${BTRFS_COMPRESS}" in
     zstd|lzo|no|none) ;;
@@ -197,6 +207,7 @@ show_effective_config() {
   log_kv "EFI size" "${EFI_SIZE}"
   log_kv "Crypt name" "${CRYPT_NAME}"
   log_kv "Btrfs compress" "${BTRFS_COMPRESS}"
+  log_kv "Btrfs label" "${BTRFS_LABEL}"
 
   log_header "Perfiles"
   log_kv "Dev" "${INSTALL_DEV_PROFILE}"

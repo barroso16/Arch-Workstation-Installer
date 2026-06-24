@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Stage03 Milestone 3.1: final non-destructive storage validation.
+# Stage03 Milestone 3.5: create Btrfs on the opened LUKS mapper.
 #
-# This milestone validates the selected target disk and shows the future storage
-# plan. It intentionally stops after exact confirmation and does not partition,
-# wipe, format, encrypt, attach filesystems, install packages, or write state files.
+# This stage uses the LUKS mapper opened by Milestone 3.4 and creates the Btrfs
+# root filesystem, its standard subvolumes, and the final /mnt mounts. It never
+# repartitions disks, recreates LUKS, changes bootloader state, or installs
+# packages.
 
 set -euo pipefail
 
@@ -18,8 +19,8 @@ source "${STAGE03_LIB_DIR}/logging.sh"
 source "${STAGE03_LIB_DIR}/config.sh"
 # shellcheck source=lib/hardware.sh
 source "${STAGE03_LIB_DIR}/hardware.sh"
-# shellcheck source=lib/disk-common.sh
-source "${STAGE03_LIB_DIR}/disk-common.sh"
+# shellcheck source=lib/disk-btrfs.sh
+source "${STAGE03_LIB_DIR}/disk-btrfs.sh"
 
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -31,7 +32,7 @@ require_arch_live_iso() {
 }
 
 require_stage03_commands() {
-  require_command lsblk awk basename findmnt realpath
+  require_command lsblk awk findmnt realpath sfdisk cryptsetup blkid mkfs.btrfs btrfs mount umount
 }
 
 require_stage03_target_disk() {
@@ -57,40 +58,78 @@ show_stage03_disk_review() {
   hardware_warn_if_disk_has_mounts "${TARGET_DISK}"
 }
 
-show_stage03_future_layout() {
-  local subvolume
-
-  log_section "Plan futuro de almacenamiento"
-  log_warn "Esta etapa solo muestra el plan. No se ejecutara ninguna accion destructiva."
-  log_kv "Disco objetivo" "${TARGET_DISK}"
-  log_kv "Tabla de particiones" "GPT"
-  log_kv "Particion EFI" "EFI System Partition (${EFI_SIZE})"
-  log_kv "Particion cifrada" "LUKS2 con el espacio restante"
-  log_kv "Mapper LUKS" "${CRYPT_NAME}"
-  log_kv "Sistema de archivos" "Btrfs"
-
-  log_header "Subvolumenes Btrfs previstos"
-  while IFS= read -r subvolume; do
-    [[ -n "${subvolume}" ]] || continue
-    log_kv "Subvolumen" "${subvolume}"
-  done < <(default_btrfs_subvolumes)
+stage03_mapped_device() {
+  mapper_path "${CRYPT_NAME}"
 }
 
-confirm_stage03_target_disk() {
-  log_section "Confirmacion exacta"
-  log_warn "La futura etapa destructiva usara este disco si continuas mas adelante."
-  log_warn "En este milestone no se borrara, particionara ni formateara nada."
-  require_exact_confirmation "${TARGET_DISK}" "Confirma el disco exacto validado por Stage03."
+precheck_stage03_btrfs() {
+  local luks_part
+  local mapped_device
+
+  log_section "Prechecks Btrfs"
+  luks_part="$(luks_partition "${TARGET_DISK}")"
+  mapped_device="$(stage03_mapped_device)"
+
+  verify_final_partition_layout "${TARGET_DISK}" "${EFI_SIZE}"
+  [[ -b "${luks_part}" ]] || die "La particion LUKS no existe: ${luks_part}"
+  require_active_btrfs_mapper "${mapped_device}"
+
+  log_kv "Particion LUKS" "${luks_part}"
+  log_kv "Mapper activo" "${mapped_device}"
+  log_kv "Compresion Btrfs" "${BTRFS_COMPRESS}"
+  log_kv "Etiqueta Btrfs" "${BTRFS_LABEL}"
+}
+
+run_stage03_btrfs() {
+  local mapped_device
+
+  mapped_device="$(stage03_mapped_device)"
+  create_btrfs "${mapped_device}" "${BTRFS_LABEL}"
+  create_btrfs_subvolumes "${mapped_device}" /mnt
+  mount_btrfs_subvolumes "${mapped_device}" /mnt
+  verify_btrfs_subvolume_mounts /mnt
+  show_btrfs_mount_summary /mnt
+}
+
+install_stage03_btrfs_cleanup_trap() {
+  trap 'cleanup_btrfs_mounts_on_failure /mnt; on_error "$LINENO" "$BASH_COMMAND"' ERR
+}
+
+clear_stage03_btrfs_cleanup_trap() {
+  trap - ERR
+}
+
+restore_stage03_default_error_trap() {
+  trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+}
+
+run_stage03_btrfs_with_cleanup() {
+  install_stage03_btrfs_cleanup_trap
+  run_stage03_btrfs
+  clear_stage03_btrfs_cleanup_trap
+  restore_stage03_default_error_trap
 }
 
 show_stage03_summary() {
+  local luks_part
+  local mapped_device
+
+  luks_part="$(luks_partition "${TARGET_DISK}")"
+  mapped_device="$(stage03_mapped_device)"
+
   log_section "Resumen Stage03"
-  log_kv "Disco validado" "${TARGET_DISK}"
-  success "Stage03 Milestone 3.1 completado. No se ejecuto ninguna accion destructiva."
+  log_kv "Particion LUKS" "${luks_part}"
+  log_kv "LUKS UUID" "$(luks_uuid "${luks_part}")"
+  log_kv "Mapper" "${mapped_device}"
+  log_kv "Estado mapper" "$(mapper_is_active "${CRYPT_NAME}" && printf 'active' || printf 'inactive')"
+  log_kv "Btrfs UUID" "$(btrfs_uuid "${mapped_device}")"
+  log_kv "Etiqueta Btrfs" "${BTRFS_LABEL}"
+  log_kv "Punto raiz" "/mnt"
+  success "Stage03 Milestone 3.5 completado. Btrfs creado y montado correctamente."
 }
 
 main() {
-  log_section "Stage03 - Validacion de almacenamiento"
+  log_section "Stage03 - Btrfs"
   require_root
   require_arch_live_iso
   require_uefi
@@ -107,8 +146,8 @@ main() {
 
   validate_stage03_target_disk
   show_stage03_disk_review
-  show_stage03_future_layout
-  confirm_stage03_target_disk
+  precheck_stage03_btrfs
+  run_stage03_btrfs_with_cleanup
   show_stage03_summary
 }
 

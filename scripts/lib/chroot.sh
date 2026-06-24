@@ -31,6 +31,9 @@ fi
 
 TARGET_ROOT="${TARGET_ROOT:-/mnt}"
 
+CHROOT_LAST_EXIT_CODE=0
+CHROOT_LAST_OUTPUT=""
+
 target_path() {
   local target_root="$1"
   local path="$2"
@@ -52,6 +55,7 @@ validate_arch_target_root() {
 
   validate_target_root "${target_root}"
   require_readable_file "$(target_path "${target_root}" /etc/os-release)"
+  require_file "$(target_path "${target_root}" /usr/bin/bash)"
 
   grep -q '^ID=arch$' "$(target_path "${target_root}" /etc/os-release)" || \
     die "${target_root} no parece un sistema Arch instalado."
@@ -61,15 +65,47 @@ validate_arch_target_root() {
   require_directory "$(target_path "${target_root}" /etc)"
 }
 
+require_arch_chroot_available() {
+  require_command arch-chroot
+}
+
+log_chroot_event() {
+  local action="$1"
+  local target_root="$2"
+  local detail="${3:-}"
+
+  log_kv "chroot.${action}.target" "${target_root}"
+  if [[ -n "${detail}" ]]; then
+    log_kv "chroot.${action}.detail" "${detail}"
+  fi
+}
+
+format_chroot_command() {
+  quote_command "$@"
+}
+
+validate_chroot_infrastructure() {
+  local target_root="${1:-${TARGET_ROOT}}"
+
+  log_section "Infraestructura chroot"
+  validate_arch_target_root "${target_root}"
+  require_arch_chroot_available
+  log_chroot_event "validated" "${target_root}" "arch-chroot disponible"
+  success "Infraestructura chroot validada para ${target_root}."
+}
+
 arch_chroot_run() {
   local target_root="$1"
+  local rendered_command
   shift
 
   [[ -n "${target_root}" ]] || die "arch_chroot_run requiere target root explicito."
   [[ "$#" -gt 0 ]] || die "arch_chroot_run requiere un comando despues del target root."
   validate_arch_target_root "${target_root}"
-  require_command arch-chroot
+  require_arch_chroot_available
 
+  rendered_command="$(format_chroot_command "$@")"
+  write_log_file "$(timestamp) [CHROOT] target=${target_root} command=${rendered_command}"
   run_logged arch-chroot "${target_root}" "$@"
 }
 
@@ -81,14 +117,57 @@ arch_chroot_default() {
 arch_chroot_bash() {
   local target_root="$1"
   local script="$2"
+  local rendered_command
 
   [[ -n "${target_root}" ]] || die "arch_chroot_bash requiere target root explicito."
   validate_arch_target_root "${target_root}"
-  require_command arch-chroot
+  require_arch_chroot_available
   [[ -n "${script}" ]] || die "arch_chroot_bash requiere un script no vacio."
 
+  rendered_command="$(format_chroot_command /usr/bin/env bash -euo pipefail -c "${script}")"
   log_step "Ejecutando script Bash dentro de ${target_root}"
+  write_log_file "$(timestamp) [CHROOT] target=${target_root} command=${rendered_command}"
   run_logged arch-chroot "${target_root}" /usr/bin/env bash -euo pipefail -c "${script}"
+}
+
+arch_chroot_capture() {
+  local target_root="$1"
+  local output
+  local status
+  local rendered_command
+  shift
+
+  [[ -n "${target_root}" ]] || die "arch_chroot_capture requiere target root explicito."
+  [[ "$#" -gt 0 ]] || die "arch_chroot_capture requiere un comando despues del target root."
+  validate_arch_target_root "${target_root}"
+  require_arch_chroot_available
+
+  rendered_command="$(format_chroot_command "$@")"
+  write_log_file "$(timestamp) [CHROOT] target=${target_root} capture=${rendered_command}"
+
+  set +e
+  output="$(arch-chroot "${target_root}" "$@" 2>&1)"
+  status=$?
+  set -e
+
+  CHROOT_LAST_EXIT_CODE="${status}"
+  CHROOT_LAST_OUTPUT="${output}"
+  export CHROOT_LAST_EXIT_CODE CHROOT_LAST_OUTPUT
+
+  printf '%s' "${output}"
+  return "${status}"
+}
+
+arch_chroot_script_capture() {
+  local target_root="$1"
+  local script="$2"
+
+  [[ -n "${script}" ]] || die "arch_chroot_script_capture requiere un script no vacio."
+  arch_chroot_capture "${target_root}" /usr/bin/env bash -euo pipefail -c "${script}"
+}
+
+arch_chroot_exit_code() {
+  printf '%s\n' "${CHROOT_LAST_EXIT_CODE}"
 }
 
 write_target_file() {
@@ -300,18 +379,64 @@ configure_target_mkinitcpio_luks_btrfs() {
   arch_chroot_run "${target_root}" mkinitcpio -P
 }
 
+configure_target_identity() {
+  local target_root="$1"
+
+  configure_target_hostname "${target_root}" "${HOSTNAME}"
+}
+
+configure_target_console() {
+  local target_root="$1"
+
+  configure_target_keymap "${target_root}" "${KEYMAP}"
+}
+
+configure_target_localization() {
+  local target_root="$1"
+
+  configure_target_timezone "${target_root}" "${TIMEZONE}"
+  configure_target_locale "${target_root}" "${LOCALE}"
+  configure_target_console "${target_root}"
+}
+
+configure_target_passwords() {
+  local target_root="$1"
+
+  : "${target_root}"
+  # Placeholder for Stage06 password handling.
+}
+
+configure_target_shell() {
+  local target_root="$1"
+
+  : "${target_root}"
+  # Placeholder for Stage06 shell customization.
+}
+
+configure_target_users() {
+  local target_root="$1"
+
+  create_target_user "${target_root}" "${USERNAME}" "wheel" "/bin/bash"
+  configure_target_passwords "${target_root}"
+  configure_target_shell "${target_root}"
+  configure_target_sudo "${target_root}"
+}
+
+configure_target_initramfs() {
+  local target_root="$1"
+
+  configure_target_mkinitcpio_luks_btrfs "${target_root}"
+}
+
 configure_target_base_system() {
   local target_root="${1:-${TARGET_ROOT}}"
 
   ensure_install_config_loaded
   validate_install_config
-  validate_arch_target_root "${target_root}"
+  validate_chroot_infrastructure "${target_root}"
 
-  configure_target_hostname "${target_root}" "${HOSTNAME}"
-  configure_target_timezone "${target_root}" "${TIMEZONE}"
-  configure_target_locale "${target_root}" "${LOCALE}"
-  configure_target_keymap "${target_root}" "${KEYMAP}"
-  create_target_user "${target_root}" "${USERNAME}" "wheel" "/bin/bash"
-  configure_target_sudo "${target_root}"
-  configure_target_mkinitcpio_luks_btrfs "${target_root}"
+  configure_target_identity "${target_root}"
+  configure_target_localization "${target_root}"
+  configure_target_users "${target_root}"
+  configure_target_initramfs "${target_root}"
 }

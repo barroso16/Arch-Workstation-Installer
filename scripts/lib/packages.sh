@@ -35,6 +35,16 @@ if ! declare -F detect_microcode_package >/dev/null 2>&1; then
 fi
 
 PROFILES_DIR="${PROJECT_ROOT}/profiles"
+BOOTSTRAP_BASE_PACKAGES=(
+  base
+  linux
+  linux-firmware
+  base-devel
+  btrfs-progs
+  cryptsetup
+  sudo
+  vim
+)
 
 profile_path() {
   local profile="$1"
@@ -137,6 +147,115 @@ build_package_list() {
       append_profile_packages "network"
     fi
   } | awk '!seen[$0]++'
+}
+
+bootstrap_base_packages() {
+  local package_name
+
+  for package_name in "${BOOTSTRAP_BASE_PACKAGES[@]}"; do
+    printf '%s\n' "${package_name}"
+  done
+}
+
+build_bootstrap_package_list() {
+  ensure_install_config_loaded
+
+  {
+    bootstrap_base_packages
+    append_package_if_not_empty "$(detect_microcode_package)"
+  } | awk 'NF && !seen[$0]++'
+}
+
+show_bootstrap_package_list() {
+  local count
+  local tmp
+  local old_return_trap
+
+  tmp="$(mktemp)"
+  old_return_trap="$(trap -p RETURN || true)"
+  trap 'rm -f -- "${tmp}"' RETURN
+
+  build_bootstrap_package_list > "${tmp}"
+  count="$(awk 'NF { count++ } END { print count + 0 }' "${tmp}")"
+
+  log_section "Paquetes base para bootstrap"
+  log_kv "Total" "${count}"
+  while IFS= read -r package_name; do
+    [[ -n "${package_name}" ]] || continue
+    log_kv "Paquete" "${package_name}"
+  done < "${tmp}"
+
+  rm -f -- "${tmp}"
+
+  if [[ -n "${old_return_trap}" ]]; then
+    eval "${old_return_trap}"
+  else
+    trap - RETURN
+  fi
+}
+
+write_bootstrap_package_list() {
+  local output_file="$1"
+
+  validate_absolute_path "${output_file}"
+  build_bootstrap_package_list | write_file_atomic "${output_file}"
+  require_readable_file "${output_file}"
+  validate_package_file_not_empty "${output_file}"
+}
+
+show_bootstrap_package_file() {
+  local package_file="$1"
+  local count
+  local package_name
+
+  require_readable_file "${package_file}"
+  count="$(awk 'NF { count++ } END { print count + 0 }' "${package_file}")"
+
+  log_section "Paquetes base para bootstrap"
+  log_kv "Archivo" "${package_file}"
+  log_kv "Total" "${count}"
+  while IFS= read -r package_name; do
+    [[ -n "${package_name}" ]] || continue
+    log_kv "Paquete" "${package_name}"
+  done < "${package_file}"
+}
+
+validate_package_file_not_empty() {
+  local package_file="$1"
+  local count
+
+  require_readable_file "${package_file}"
+  count="$(awk 'NF { count++ } END { print count + 0 }' "${package_file}")"
+  [[ "${count}" -gt 0 ]] || die "La lista de paquetes esta vacia: ${package_file}"
+}
+
+verify_pacman_repositories_reachable() {
+  require_command pacman
+
+  log_step "Verificando repositorios de pacman"
+  run_logged pacman -Sy --noconfirm >/dev/null
+  success "Repositorios de pacman accesibles."
+}
+
+pacstrap_bootstrap_target() {
+  local target="$1"
+  local -a packages
+
+  require_command pacstrap
+  require_directory "${target}"
+
+  mapfile -t packages < <(build_bootstrap_package_list)
+  [[ "${#packages[@]}" -gt 0 ]] || die "La lista de paquetes base esta vacia."
+
+  pacstrap_install_packages "${target}" "${packages[@]}"
+}
+
+pacstrap_bootstrap_package_file() {
+  local target="$1"
+  local package_file="$2"
+
+  validate_package_file_not_empty "${package_file}"
+  pacstrap_install_package_list "${target}" "${package_file}"
 }
 
 write_package_list() {
