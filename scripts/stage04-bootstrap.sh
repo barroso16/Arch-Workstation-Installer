@@ -218,6 +218,29 @@ detect_stage04_target_disk() {
   printf '/dev/%s\n' "${parent_name}"
 }
 
+normalize_findmnt_source() {
+  local source="$1"
+
+  # Btrfs subvolume mounts can appear as /dev/mapper/cryptroot[/@].
+  # Keep the backing block device path and drop any bracket suffix.
+  source="${source%%\[*}"
+  printf '%s\n' "${source}"
+}
+
+detect_stage04_btrfs_uuid() {
+  local target_root="$1"
+  local mapped_device="$2"
+  local uuid
+
+  uuid="$(findmnt -no UUID --target "${target_root}" 2>/dev/null || true)"
+  if [[ -n "${uuid}" ]]; then
+    printf '%s\n' "${uuid}"
+    return 0
+  fi
+
+  blkid -s UUID -o value "${mapped_device}" 2>/dev/null || true
+}
+
 write_stage04_target_install_state() {
   local target_root="${STAGE04_TARGET_ROOT}"
   local state_file="${target_root}/root/install-state.env"
@@ -230,6 +253,8 @@ write_stage04_target_install_state() {
   local btrfs_uuid
   local btrfs_label
   local target_disk
+  local raw_efi_source
+  local raw_root_source
 
   validate_absolute_path "${state_file}"
   resolved_state="$(realpath -m -- "${state_file}")"
@@ -237,14 +262,16 @@ write_stage04_target_install_state() {
   [[ "${resolved_state}" == "${target_root_real}/root/install-state.env" ]] || \
     die "Ruta de estado target inesperada: ${resolved_state}"
 
-  efi_partition="$(findmnt -no SOURCE --target "${target_root}/boot" 2>/dev/null || true)"
-  mapped_device="$(findmnt -no SOURCE --target "${target_root}" 2>/dev/null || true)"
+  raw_efi_source="$(findmnt -no SOURCE --target "${target_root}/boot" 2>/dev/null || true)"
+  raw_root_source="$(findmnt -no SOURCE --target "${target_root}" 2>/dev/null || true)"
+  efi_partition="$(normalize_findmnt_source "${raw_efi_source}")"
+  mapped_device="$(normalize_findmnt_source "${raw_root_source}")"
   [[ -n "${efi_partition}" && -b "${efi_partition}" ]] || die "No se pudo detectar la particion EFI montada en ${target_root}/boot."
   [[ -n "${mapped_device}" && -b "${mapped_device}" ]] || die "No se pudo detectar el dispositivo Btrfs montado en ${target_root}."
 
   luks_partition="$(detect_stage04_luks_partition)"
   luks_uuid="$(cryptsetup luksUUID "${luks_partition}" 2>/dev/null || true)"
-  btrfs_uuid="$(blkid -s UUID -o value "${mapped_device}" 2>/dev/null || true)"
+  btrfs_uuid="$(detect_stage04_btrfs_uuid "${target_root}" "${mapped_device}")"
   btrfs_label="$(blkid -s LABEL -o value "${mapped_device}" 2>/dev/null || true)"
   target_disk="$(detect_stage04_target_disk "${luks_partition}")"
 
