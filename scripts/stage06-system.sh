@@ -76,21 +76,21 @@ target_command_exists_stage06() {
   arch_chroot_run "${STAGE06_TARGET_ROOT}" command -v "${command_name}" >/dev/null 2>&1
 }
 
-target_group_exists() {
+stage06_target_group_exists() {
   local group_name="$1"
 
   validate_shell_identifier "${group_name}" "grupo"
   arch_chroot_run "${STAGE06_TARGET_ROOT}" getent group "${group_name}" >/dev/null 2>&1
 }
 
-target_user_exists() {
+stage06_target_user_exists() {
   local username="$1"
 
   validate_username_value "${username}"
   arch_chroot_run "${STAGE06_TARGET_ROOT}" id -u "${username}" >/dev/null 2>&1
 }
 
-target_unit_exists() {
+stage06_target_unit_exists() {
   local unit="$1"
 
   validate_systemd_unit_name "${unit}"
@@ -115,7 +115,7 @@ enable_service_if_available() {
   local unit="$2"
   local command_name="${3:-}"
 
-  if target_unit_exists "${unit}" || { [[ -n "${command_name}" ]] && target_command_exists_stage06 "${command_name}"; }; then
+  if stage06_target_unit_exists "${unit}" || { [[ -n "${command_name}" ]] && target_command_exists_stage06 "${command_name}"; }; then
     if enable_target_service "${STAGE06_TARGET_ROOT}" "${unit}"; then
       record_enabled_service "${unit}"
     else
@@ -146,7 +146,7 @@ add_user_to_group_if_available() {
   local group_name="$2"
   local label="$3"
 
-  if target_group_exists "${group_name}"; then
+  if stage06_target_group_exists "${group_name}"; then
     arch_chroot_run "${STAGE06_TARGET_ROOT}" usermod -aG "${group_name}" "${username}"
     log_info "${username} agregado a ${group_name} (${label})."
   else
