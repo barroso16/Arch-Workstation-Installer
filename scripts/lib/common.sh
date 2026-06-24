@@ -213,6 +213,8 @@ load_config() {
   local resolved_configs_dir
   local resolved_config_file
   local mode
+  local group_digit
+  local other_digit
 
   configs_dir="${PROJECT_ROOT}/configs"
   resolved_configs_dir="$(realpath -m -- "${configs_dir}")"
@@ -224,9 +226,12 @@ load_config() {
   require_readable_file "${CONFIG_FILE}"
 
   mode="$(stat -c '%a' "${CONFIG_FILE}")"
-  case "${mode}" in
-    *[2367]) die "Archivo de configuracion escribible por otros: ${CONFIG_FILE}" ;;
-  esac
+  group_digit="${mode: -2:1}"
+  other_digit="${mode: -1}"
+
+  if (( group_digit & 2 )) || (( other_digit & 2 )); then
+    die "Archivo de configuracion escribible por grupo u otros: ${CONFIG_FILE}"
+  fi
 
   # install.conf is trusted project shell code. It is sourced intentionally so
   # stage scripts can share simple Bash variables without an extra parser.

@@ -164,16 +164,41 @@ detect_tpm2_status() {
 }
 
 list_available_disks() {
+  local line
+  local NAME
+  local SIZE
+  local MODEL
+  local SERIAL
+  local TYPE
+  local TRAN
+  local RM
+  local warning
+
   if command_exists lsblk; then
-    lsblk -dpno NAME,SIZE,MODEL,SERIAL,TYPE,TRAN,RM 2>/dev/null | awk '
-      $5 == "disk" {
-        warning = ""
-        if ($6 == "usb" || $7 == "1") {
-          warning = "  [PELIGRO: USB/REMOVIBLE]"
-        }
-        print $0 warning
-      }
-    '
+    while IFS= read -r line; do
+      NAME=""
+      SIZE=""
+      MODEL=""
+      SERIAL=""
+      TYPE=""
+      TRAN=""
+      RM=""
+      warning=""
+
+      [[ "${line}" == NAME=\"* ]] || continue
+
+      eval "${line}"
+
+      [[ "${TYPE}" == "disk" ]] || continue
+
+      if [[ "${TRAN}" == "usb" || "${RM}" == "1" ]]; then
+        warning="  [PELIGRO: USB/REMOVIBLE]"
+      fi
+
+      printf '%s %s %s %s %s %s %s%s\n' \
+        "${NAME}" "${SIZE}" "${MODEL:-unknown}" "${SERIAL:-unknown}" \
+        "${TYPE}" "${TRAN:-unknown}" "${RM:-0}" "${warning}"
+    done < <(lsblk -P -dpno NAME,SIZE,MODEL,SERIAL,TYPE,TRAN,RM 2>/dev/null)
   else
     find /dev -maxdepth 1 -type b \( -name 'sd*' -o -name 'nvme*n*' -o -name 'vd*' \) -print 2>/dev/null
   fi
