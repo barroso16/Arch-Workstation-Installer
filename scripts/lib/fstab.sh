@@ -100,6 +100,60 @@ write_generated_fstab() {
   generate_fstab_content "${target_root}" | write_file_atomic "${fstab_file}"
 }
 
+fstab_live_iso_pattern() {
+  printf '%s\n' '(/hgfs|hgfs|vmhgfs|fuse[.]vmhgfs-fuse)'
+}
+
+fstab_contains_live_iso_entries() {
+  local fstab_file="$1"
+
+  grep -Eq "$(fstab_live_iso_pattern)" "${fstab_file}"
+}
+
+filter_live_iso_fstab_entries() {
+  local target_root="$1"
+  local fstab_file
+  local backup_file
+  local pattern
+  local before_count
+  local after_count
+  local removed_count
+
+  fstab_file="$(target_fstab_path "${target_root}")"
+  backup_file="${fstab_file}.bak-before-filter"
+  pattern="$(fstab_live_iso_pattern)"
+
+  require_readable_file "${fstab_file}"
+  if ! fstab_contains_live_iso_entries "${fstab_file}"; then
+    log_info "fstab no contiene entradas heredadas del Live ISO."
+    return 0
+  fi
+
+  require_command awk cp wc tr
+  before_count="$(wc -l < "${fstab_file}" | tr -d '[:space:]')"
+  cp -a -- "${fstab_file}" "${backup_file}"
+  log_warn "Se detectaron entradas no-target heredadas del Live ISO en fstab."
+  log_warn "Backup creado antes del filtrado: ${backup_file}"
+
+  awk -v pattern="${pattern}" '$0 !~ pattern' "${fstab_file}" | write_file_atomic "${fstab_file}"
+
+  after_count="$(wc -l < "${fstab_file}" | tr -d '[:space:]')"
+  removed_count="$((before_count - after_count))"
+  log_warn "Entradas eliminadas de fstab por filtrado Live ISO: ${removed_count}"
+}
+
+validate_no_live_iso_fstab_entries() {
+  local target_root="$1"
+  local fstab_file
+
+  fstab_file="$(target_fstab_path "${target_root}")"
+  require_readable_file "${fstab_file}"
+
+  if fstab_contains_live_iso_entries "${fstab_file}"; then
+    die "fstab contiene entradas heredadas del Live ISO hgfs/vmhgfs/fuse.vmhgfs-fuse: ${fstab_file}"
+  fi
+}
+
 validate_generated_fstab() {
   local target_root="$1"
   local fstab_file
@@ -113,6 +167,7 @@ validate_generated_fstab() {
   grep -Eq 'subvol=/?@home([[:space:],]|$)' "${fstab_file}" || die "fstab no contiene el subvolumen @home."
   grep -q 'compress=zstd' "${fstab_file}" || die "fstab no contiene compress=zstd."
   grep -Eq '[[:space:]]/boot[[:space:]]' "${fstab_file}" || die "fstab no contiene el montaje EFI /boot."
+  validate_no_live_iso_fstab_entries "${target_root}"
   success "fstab validado correctamente: ${fstab_file}"
 }
 
@@ -146,6 +201,7 @@ configure_target_fstab() {
   local target_root="$1"
 
   write_generated_fstab "${target_root}"
+  filter_live_iso_fstab_entries "${target_root}"
   validate_generated_fstab "${target_root}"
   print_generated_fstab "${target_root}"
   show_fstab_summary "${target_root}"

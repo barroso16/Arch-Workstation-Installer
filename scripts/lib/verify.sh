@@ -251,6 +251,23 @@ verify_efi_mount() {
   fi
 }
 
+verify_target_fstab_no_live_iso_entries() {
+  local target_root="${1:-${TARGET_ROOT}}"
+  local fstab_file
+
+  fstab_file="$(target_path "${target_root}" /etc/fstab)"
+  if [[ ! -r "${fstab_file}" ]]; then
+    verify_fail "fstab no es legible en target"
+    return 0
+  fi
+
+  if grep -Eq '(/hgfs|hgfs|vmhgfs|fuse[.]vmhgfs-fuse)' "${fstab_file}"; then
+    verify_fail "fstab contiene entradas heredadas del Live ISO hgfs/vmhgfs"
+  else
+    verify_pass "fstab sin entradas hgfs/vmhgfs heredadas del Live ISO"
+  fi
+}
+
 verify_kernels_and_initramfs() {
   local target_root="${1:-${TARGET_ROOT}}"
 
@@ -410,6 +427,7 @@ run_passive_verification() {
   verify_btrfs_root "${target_root}"
   verify_btrfs_subvolumes "${target_root}"
   verify_efi_mount "${target_root}"
+  verify_target_fstab_no_live_iso_entries "${target_root}"
   verify_kernels_and_initramfs "${target_root}"
   verify_systemd_boot "${target_root}"
   verify_network_services "${target_root}"
