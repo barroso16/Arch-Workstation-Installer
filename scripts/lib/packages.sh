@@ -97,7 +97,14 @@ append_profile_packages() {
 append_package_if_not_empty() {
   local package="$1"
 
-  [[ -n "${package}" ]] && printf '%s\n' "${package}"
+  if [[ -n "${package}" ]]; then
+    printf '%s\n' "${package}"
+  fi
+  return 0
+}
+
+secure_boot_bootstrap_requested() {
+  is_yes "${ENABLE_SECURE_BOOT:-no}" || is_yes "${SBCTL_CREATE_KEYS:-no}"
 }
 
 build_package_list() {
@@ -163,6 +170,10 @@ build_bootstrap_package_list() {
   {
     bootstrap_base_packages
     append_package_if_not_empty "$(detect_microcode_package)"
+
+    if secure_boot_bootstrap_requested; then
+      append_package_if_not_empty "sbctl"
+    fi
   } | awk 'NF && !seen[$0]++'
 }
 
