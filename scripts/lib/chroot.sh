@@ -220,7 +220,9 @@ create_target_user() {
   local existing_groups
 
   validate_username_value "${username}"
+  ensure_target_group_exists "${target_root}" wheel
   existing_groups="$(target_existing_groups_csv "${target_root}" "${groups}")"
+  TARGET_USER_CREATED="no"
 
   if arch_chroot_run "${target_root}" id -u "${username}" >/dev/null 2>&1; then
     log_info "Usuario ya existente: ${username}"
@@ -230,7 +232,9 @@ create_target_user() {
     else
       arch_chroot_run "${target_root}" useradd -m -s "${shell}" "${username}"
     fi
+    TARGET_USER_CREATED="yes"
   fi
+  export TARGET_USER_CREATED
 
   configure_target_user_groups "${target_root}" "${username}" "${groups}"
   ensure_target_user_home "${target_root}" "${username}"
@@ -241,14 +245,15 @@ configure_target_sudo() {
   local sudoers_file
 
   validate_arch_target_root "${target_root}"
+  ensure_target_group_exists "${target_root}" wheel
   arch_chroot_run "${target_root}" command -v visudo >/dev/null
-  sudoers_file="$(target_path "${target_root}" /etc/sudoers.d/00-wheel)"
+  sudoers_file="$(target_path "${target_root}" /etc/sudoers.d/10-wheel)"
 
   write_file_atomic "${sudoers_file}" <<'EOF'
 %wheel ALL=(ALL:ALL) ALL
 EOF
   chmod 0440 "${sudoers_file}"
-  arch_chroot_run "${target_root}" visudo -cf /etc/sudoers.d/00-wheel
+  arch_chroot_run "${target_root}" visudo -cf /etc/sudoers.d/10-wheel
 }
 
 target_group_exists() {
@@ -256,6 +261,15 @@ target_group_exists() {
   local group="$2"
 
   arch_chroot_capture "${target_root}" getent group "${group}" >/dev/null 2>&1
+}
+
+ensure_target_group_exists() {
+  local target_root="$1"
+  local group="$2"
+
+  if ! target_group_exists "${target_root}" "${group}"; then
+    arch_chroot_run "${target_root}" groupadd "${group}"
+  fi
 }
 
 target_existing_groups_csv() {
@@ -316,9 +330,8 @@ configure_target_root_password() {
   local target_root="$1"
 
   validate_chroot_infrastructure "${target_root}"
-  log_warn "Se solicitara la contrasena de root dentro del sistema instalado."
-  log_warn "No se almacena ni se imprime ninguna contrasena."
-  arch_chroot_run "${target_root}" passwd
+  read_and_apply_target_password "${target_root}" root "root"
+  verify_target_account_unlocked "${target_root}" root
 }
 
 configure_target_user_password() {
@@ -327,9 +340,93 @@ configure_target_user_password() {
 
   validate_username_value "${username}"
   arch_chroot_run "${target_root}" id -u "${username}" >/dev/null
-  log_warn "Se solicitara la contrasena del usuario ${username} dentro del sistema instalado."
-  log_warn "No se almacena ni se imprime ninguna contrasena."
-  arch_chroot_run "${target_root}" passwd "${username}"
+  read_and_apply_target_password "${target_root}" "${username}" "usuario ${username}"
+  verify_target_account_unlocked "${target_root}" "${username}"
+}
+
+read_password_twice() {
+  local label="$1"
+  local first
+  local second
+  local attempts=0
+
+  while ((attempts < 3)); do
+    attempts=$((attempts + 1))
+    printf 'Contrasena para %s: ' "${label}" >&2
+    IFS= read -r -s first
+    printf '\n' >&2
+    printf 'Repite contrasena para %s: ' "${label}" >&2
+    IFS= read -r -s second
+    printf '\n' >&2
+
+    if [[ -z "${first}" ]]; then
+      log_warn "La contrasena no puede estar vacia."
+    elif [[ "${first}" == "${second}" ]]; then
+      TARGET_PASSWORD_VALUE="${first}"
+      unset first second
+      return 0
+    else
+      log_warn "Las contrasenas no coinciden."
+    fi
+
+    unset first second
+  done
+
+  die "No se pudo confirmar la contrasena despues de 3 intentos."
+}
+
+apply_target_password_with_chpasswd() {
+  local target_root="$1"
+  local username="$2"
+  local password="$3"
+
+  arch_chroot_run "${target_root}" command -v chpasswd >/dev/null
+  printf '%s:%s\n' "${username}" "${password}" | arch_chroot_run "${target_root}" chpasswd
+}
+
+read_and_apply_target_password() {
+  local target_root="$1"
+  local username="$2"
+  local label="$3"
+
+  log_warn "Se solicitara la contrasena de ${label}. No se almacena en configs, estado, logs ni archivos del repo."
+  log_warn "Usa caracteres compatibles con el keymap configurado para instalacion y login."
+  TARGET_PASSWORD_VALUE=""
+  read_password_twice "${label}"
+  if ! apply_target_password_with_chpasswd "${target_root}" "${username}" "${TARGET_PASSWORD_VALUE}"; then
+    TARGET_PASSWORD_VALUE=""
+    unset TARGET_PASSWORD_VALUE
+    die "No se pudo aplicar la contrasena de ${label}."
+  fi
+  TARGET_PASSWORD_VALUE=""
+  unset TARGET_PASSWORD_VALUE
+}
+
+target_account_password_status() {
+  local target_root="$1"
+  local username="$2"
+
+  arch_chroot_capture "${target_root}" passwd -S "${username}" | awk '{ print $2; exit }'
+}
+
+target_account_has_valid_password() {
+  local target_root="$1"
+  local username="$2"
+  local status
+
+  status="$(target_account_password_status "${target_root}" "${username}" 2>/dev/null || true)"
+  [[ "${status}" == "P" ]]
+}
+
+verify_target_account_unlocked() {
+  local target_root="$1"
+  local username="$2"
+
+  if target_account_has_valid_password "${target_root}" "${username}"; then
+    success "Cuenta con contrasena valida: ${username}"
+  else
+    die "La cuenta ${username} no tiene una contrasena valida segun passwd -S."
+  fi
 }
 
 target_shell_exists() {
@@ -546,8 +643,23 @@ configure_target_passwords() {
     return 0
   fi
 
-  configure_target_root_password "${target_root}"
-  configure_target_user_password "${target_root}" "${username}"
+  if [[ "${TARGET_USER_CREATED:-no}" == "yes" ]] || ! target_account_has_valid_password "${target_root}" "${username}"; then
+    configure_target_user_password "${target_root}" "${username}"
+    TARGET_USER_PASSWORD_STATUS="configurada"
+  else
+    TARGET_USER_PASSWORD_STATUS="ya valida"
+    success "El usuario ${username} ya tiene una contrasena valida."
+  fi
+  export TARGET_USER_PASSWORD_STATUS
+
+  if confirm_yes_no "Deseas configurar una contrasena de root de recuperacion?"; then
+    configure_target_root_password "${target_root}"
+    TARGET_ROOT_PASSWORD_STATUS="configurada"
+  else
+    TARGET_ROOT_PASSWORD_STATUS="omitida"
+    log_info "Contrasena de root omitida por el operador."
+  fi
+  export TARGET_ROOT_PASSWORD_STATUS
 }
 
 configure_target_shell() {

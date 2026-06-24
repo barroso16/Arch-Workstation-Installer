@@ -4,12 +4,15 @@
 # This stage is non-destructive by design. It never partitions, wipes, formats,
 # encrypts, mounts, installs packages, or touches bootloader state. Its only
 # responsibility is choosing a full disk and persisting TARGET_DISK safely.
+# It also lets the operator set the primary username before later stages create
+# accounts. It never asks for or stores passwords.
 
 set -euo pipefail
 
 STAGE02_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 STAGE02_LIB_DIR="${STAGE02_DIR}/lib"
 STAGE02_SELECTED_DISK=""
+STAGE02_SELECTED_USERNAME=""
 
 # shellcheck source=lib/common.sh
 source "${STAGE02_LIB_DIR}/common.sh"
@@ -97,11 +100,65 @@ persist_target_disk() {
   load_config >/dev/null
 }
 
+configured_username_is_placeholder() {
+  local configured_username
+
+  configured_username="$(awk -F= '
+    $1 == "USERNAME" {
+      value = $0
+      sub(/^[^=]*=/, "", value)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^'\''|'\''$/, "", value)
+      gsub(/^"|"$/, "", value)
+      print value
+      exit
+    }
+  ' "${CONFIG_FILE}")"
+
+  [[ -z "${configured_username}" || "${configured_username}" == "user" ]]
+}
+
+read_primary_username() {
+  local username
+
+  log_header "Usuario principal"
+  log_info "Nombre de usuario principal [default: user]"
+  printf 'Nombre de usuario principal: '
+  read -r username
+  username="$(trim "${username}")"
+  username="${username:-user}"
+  validate_username_value "${username}"
+  STAGE02_SELECTED_USERNAME="${username}"
+}
+
+select_primary_username() {
+  if configured_username_is_placeholder; then
+    read_primary_username
+    return 0
+  fi
+
+  validate_username_value "${USERNAME}"
+  STAGE02_SELECTED_USERNAME="${USERNAME}"
+  log_info "USERNAME configurado: ${STAGE02_SELECTED_USERNAME}"
+}
+
+persist_primary_username() {
+  local username="$1"
+
+  validate_username_value "${username}"
+  replace_or_append_kv "${CONFIG_FILE}" "USERNAME" "${username}"
+  load_install_config
+  validate_install_config
+  [[ "${USERNAME}" == "${username}" ]] || die "USERNAME no coincide despues de guardar configuracion."
+  load_config >/dev/null
+}
+
 show_stage02_summary() {
   local disk="$1"
 
   log_section "Resumen Stage02"
   log_kv "Selected disk" "${disk}"
+  log_kv "Usuario principal" "${STAGE02_SELECTED_USERNAME}"
   success "Configuration updated successfully"
 }
 
@@ -124,9 +181,11 @@ main() {
   hardware_show_disk_inventory_table
 
   select_target_disk
+  select_primary_username
   validate_and_warn_selected_disk "${STAGE02_SELECTED_DISK}"
   confirm_selected_disk "${STAGE02_SELECTED_DISK}"
   persist_target_disk "${STAGE02_SELECTED_DISK}"
+  persist_primary_username "${STAGE02_SELECTED_USERNAME}"
   show_stage02_summary "${STAGE02_SELECTED_DISK}"
 }
 

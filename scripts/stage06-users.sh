@@ -42,8 +42,9 @@ validate_stage06_target() {
 }
 
 configure_stage06_users() {
-  export STAGE06_INTERACTIVE_PASSWORDS="yes"
-  export STAGE06_CONFIGURE_SHELL="yes"
+  STAGE06_INTERACTIVE_PASSWORDS="${STAGE06_INTERACTIVE_PASSWORDS:-yes}"
+  STAGE06_CONFIGURE_SHELL="${STAGE06_CONFIGURE_SHELL:-yes}"
+  export STAGE06_INTERACTIVE_PASSWORDS STAGE06_CONFIGURE_SHELL
 
   log_step "Configurando usuario, grupos, sudo, shell y contrasenas"
   configure_target_users "${STAGE06_TARGET_ROOT}" "${USERNAME}" "wheel audio video storage input network"
@@ -59,8 +60,8 @@ show_stage06_summary() {
   log_kv "Grupos aplicados" "${STAGE06_APPLIED_GROUPS}"
   log_kv "sudo wheel" "configurado y validado con visudo"
   log_kv "Shell seleccionada" "${STAGE06_SELECTED_SHELL}"
-  log_kv "Contrasena root" "configurada interactivamente"
-  log_kv "Contrasena usuario" "configurada interactivamente"
+  log_kv "Contrasena root" "${TARGET_ROOT_PASSWORD_STATUS:-omitida}"
+  log_kv "Contrasena usuario" "${TARGET_USER_PASSWORD_STATUS:-verificada}"
   success "Stage06 Milestone 6.1 completado."
 }
 

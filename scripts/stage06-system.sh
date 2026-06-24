@@ -105,26 +105,9 @@ ensure_stage06_user() {
   log_section "Usuario"
   validate_username_value "${username}"
 
-  if ! target_group_exists wheel; then
-    log_step "Creando grupo wheel"
-    arch_chroot_run "${STAGE06_TARGET_ROOT}" groupadd wheel
-  fi
-
-  if target_user_exists "${username}"; then
-    log_info "Usuario existente: ${username}"
-    arch_chroot_run "${STAGE06_TARGET_ROOT}" usermod -aG wheel -s /bin/bash "${username}"
-  else
-    log_step "Creando usuario ${username}"
-    arch_chroot_run "${STAGE06_TARGET_ROOT}" useradd -m -G wheel -s /bin/bash "${username}"
-  fi
-
-  arch_chroot_run "${STAGE06_TARGET_ROOT}" /usr/bin/env bash -euo pipefail -c '
-    username="$1"
-    home_dir="$(getent passwd "${username}" | awk -F: "{ print \$6 }")"
-    primary_group="$(id -gn "${username}")"
-    [[ -n "${home_dir}" ]] || exit 1
-    install -d -m 0750 -o "${username}" -g "${primary_group}" "${home_dir}"
-  ' _ "${username}"
+  STAGE06_INTERACTIVE_PASSWORDS="${STAGE06_INTERACTIVE_PASSWORDS:-yes}"
+  export STAGE06_INTERACTIVE_PASSWORDS
+  configure_target_users "${STAGE06_TARGET_ROOT}" "${username}" "wheel audio video storage input network"
 }
 
 enable_service_if_available() {
@@ -241,6 +224,8 @@ show_stage06_summary() {
   log_section "Resumen final Stage06"
   log_kv "Usuario" "${USERNAME}"
   log_kv "Grupos" "${groups:-no detectados}"
+  log_kv "Contrasena usuario" "${TARGET_USER_PASSWORD_STATUS:-verificada}"
+  log_kv "Contrasena root" "${TARGET_ROOT_PASSWORD_STATUS:-omitida}"
 
   log_header "Servicios habilitados"
   if ((${#STAGE06_ENABLED_SERVICES[@]} == 0)); then

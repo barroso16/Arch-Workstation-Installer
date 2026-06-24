@@ -24,7 +24,7 @@ CONFIG_VALIDATED="no"
 
 set_config_defaults() {
   HOSTNAME="${HOSTNAME:-arch-pro}"
-  USERNAME="${USERNAME:-operator}"
+  USERNAME="${USERNAME:-user}"
   TIMEZONE="${TIMEZONE:-UTC}"
   LOCALE="${LOCALE:-en_US.UTF-8}"
   KEYMAP="${KEYMAP:-us}"
@@ -77,7 +77,7 @@ validate_username_value() {
   local value="$1"
 
   [[ ${#value} -ge 1 && ${#value} -le 32 ]] || die "USERNAME debe tener entre 1 y 32 caracteres."
-  [[ "${value}" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || die "USERNAME no es valido: ${value}"
+  [[ "${value}" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "USERNAME no es valido: ${value}"
   [[ "${value}" != "root" ]] || die "USERNAME no puede ser root."
 }
 
