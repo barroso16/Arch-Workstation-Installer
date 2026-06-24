@@ -129,12 +129,13 @@ enroll_sbctl_keys_conservative() {
   show_secureboot_status_summary "${target_root}"
 
   if [[ "${setup_mode}" != "enabled" ]]; then
-    log_warn "Setup Mode no esta enabled. El enrolamiento puede fallar o requerir cambios en BIOS/UEFI."
+    log_warn "Setup Mode disabled; enrolamiento omitido. Bootloader firmado y verificable si sbctl verify pasa."
     log_warn "Estado Setup Mode detectado: ${setup_mode}"
+    return 0
   fi
 
   confirm_yes_no "Quieres enrolar claves Secure Boot ahora con sbctl?" || \
-    die "Enrolamiento de claves cancelado por el usuario."
+    { log_warn "Enrolamiento de claves omitido por el operador."; return 0; }
 
   if is_yes "${SBCTL_ENROLL_MICROSOFT_KEYS}"; then
     log_warn "Enrolando claves sbctl con Microsoft keys por configuracion explicita."

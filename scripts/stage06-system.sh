@@ -127,14 +127,69 @@ enable_service_if_available() {
   fi
 }
 
+stage06_enable_required_service() {
+  local label="$1"
+  local unit="$2"
+
+  if enable_target_service "${STAGE06_TARGET_ROOT}" "${unit}"; then
+    record_enabled_service "${unit}"
+  else
+    record_omitted_service "${unit} (error al habilitar)"
+    record_stage06_warning "No se pudo habilitar ${label}: ${unit}"
+  fi
+}
+
+stage06_networkmanager_available() {
+  stage06_target_unit_exists NetworkManager.service || target_command_exists_stage06 NetworkManager
+}
+
+configure_stage06_network() {
+  log_section "Red"
+
+  if ! is_yes "${INSTALL_NETWORK_PROFILE:-yes}"; then
+    record_stage06_warning "Perfil de red desactivado; no se habilita NetworkManager ni systemd-networkd."
+    return 0
+  fi
+
+  if stage06_networkmanager_available; then
+    stage06_enable_required_service "NetworkManager" "NetworkManager.service"
+    log_info "NetworkManager instalado; no se configura fallback systemd-networkd."
+    return 0
+  fi
+
+  log_warn "NetworkManager no esta instalado; se configurara fallback con systemd-networkd y systemd-resolved."
+  create_directory "$(target_path "${STAGE06_TARGET_ROOT}" /etc/systemd/network)" 0755
+  write_target_file "${STAGE06_TARGET_ROOT}" /etc/systemd/network/20-wired.network <<'EOF'
+[Match]
+Name=en* eth* ens*
+
+[Network]
+DHCP=yes
+EOF
+  stage06_enable_required_service "systemd-networkd" "systemd-networkd.service"
+  stage06_enable_required_service "systemd-resolved" "systemd-resolved.service"
+  arch_chroot_run "${STAGE06_TARGET_ROOT}" ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+}
+
+configure_stage06_ssh() {
+  log_section "OpenSSH"
+
+  if ! is_yes "${INSTALL_OPENSSH:-yes}"; then
+    record_stage06_warning "INSTALL_OPENSSH desactivado; sshd.service no se habilita."
+    return 0
+  fi
+
+  enable_service_if_available "OpenSSH" "sshd.service" "sshd"
+}
+
 configure_stage06_services() {
   log_section "Servicios"
-  enable_service_if_available "NetworkManager" "NetworkManager.service" "NetworkManager"
+  configure_stage06_network
+  configure_stage06_ssh
   enable_service_if_available "Bluetooth" "bluetooth.service" "bluetoothd"
   enable_service_if_available "Docker" "docker.service" "docker"
   enable_service_if_available "libvirt" "libvirtd.service" "virsh"
   enable_service_if_available "SDDM" "sddm.service" "sddm"
-  enable_service_if_available "OpenSSH" "sshd.service" "sshd"
   enable_service_if_available "CUPS" "cups.service" "cupsd"
   enable_service_if_available "Reflector" "reflector.timer" "reflector"
   enable_service_if_available "fstrim" "fstrim.timer" "fstrim"

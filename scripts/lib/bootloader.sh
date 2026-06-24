@@ -842,16 +842,29 @@ require_secure_boot_setup_mode_for_enrollment() {
       success "Setup Mode habilitado; el enrolado Secure Boot puede continuar."
       ;;
     disabled)
-      die "No se puede enrolar Secure Boot porque Setup Mode esta disabled. Reinicia al firmware UEFI, limpia/reset Secure Boot keys para entrar en Setup Mode y vuelve a ejecutar Stage05."
+      SECURE_BOOT_ENROLLMENT_STATUS="setup-mode-disabled"
+      export SECURE_BOOT_ENROLLMENT_STATUS
+      log_warn "Setup Mode disabled; enrolamiento omitido. Bootloader firmado y verificable."
+      log_warn "Reinicia al firmware UEFI, limpia/reset Secure Boot keys para entrar en Setup Mode y vuelve a ejecutar Stage05 si quieres enrolar claves."
+      return 1
       ;;
     unsupported)
-      die "No se puede validar Setup Mode en este entorno. Secure Boot requiere UEFI con efivars accesible antes de enrolar claves."
+      SECURE_BOOT_ENROLLMENT_STATUS="setup-mode-unsupported"
+      export SECURE_BOOT_ENROLLMENT_STATUS
+      log_warn "No se puede validar Setup Mode en este entorno; enrolamiento omitido."
+      return 1
       ;;
     unknown)
-      die "No se puede validar Setup Mode porque la variable UEFI SetupMode no esta disponible o no es legible. No se ejecutara sbctl enroll-keys."
+      SECURE_BOOT_ENROLLMENT_STATUS="setup-mode-unknown"
+      export SECURE_BOOT_ENROLLMENT_STATUS
+      log_warn "No se puede validar Setup Mode porque la variable UEFI SetupMode no esta disponible o no es legible; enrolamiento omitido."
+      return 1
       ;;
     *)
-      die "Estado Setup Mode no reconocido: ${setup_mode}. No se ejecutara sbctl enroll-keys."
+      SECURE_BOOT_ENROLLMENT_STATUS="setup-mode-unknown"
+      export SECURE_BOOT_ENROLLMENT_STATUS
+      log_warn "Estado Setup Mode no reconocido: ${setup_mode}; enrolamiento omitido."
+      return 1
       ;;
   esac
 }
@@ -867,9 +880,10 @@ confirm_secure_boot_key_enrollment() {
     return 0
   fi
 
-  SECURE_BOOT_ENROLLMENT_STATUS="denied"
+  SECURE_BOOT_ENROLLMENT_STATUS="operator-skipped"
   export SECURE_BOOT_ENROLLMENT_STATUS
-  die "Enrolado Secure Boot cancelado por el operador."
+  log_warn "Enrolado Secure Boot omitido por el operador. Bootloader firmado y verificable."
+  return 1
 }
 
 sbctl_status_reports_enrollment_state() {
@@ -939,8 +953,12 @@ enroll_secure_boot_keys() {
   show_secure_boot_status "${target_root}"
 
   if secure_boot_enrollment_requires_confirmation; then
-    require_secure_boot_setup_mode_for_enrollment
-    confirm_secure_boot_key_enrollment
+    if ! require_secure_boot_setup_mode_for_enrollment; then
+      return 0
+    fi
+    if ! confirm_secure_boot_key_enrollment; then
+      return 0
+    fi
   fi
 
   log_step "Enrolando claves Secure Boot con sbctl enroll-keys"

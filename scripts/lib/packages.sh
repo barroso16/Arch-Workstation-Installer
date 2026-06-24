@@ -174,6 +174,14 @@ build_bootstrap_package_list() {
     if secure_boot_bootstrap_requested; then
       append_package_if_not_empty "sbctl"
     fi
+
+    if is_yes "${INSTALL_NETWORK_PROFILE:-no}"; then
+      append_package_if_not_empty "networkmanager"
+    fi
+
+    if is_yes "${INSTALL_OPENSSH:-no}"; then
+      append_package_if_not_empty "openssh"
+    fi
   } | awk 'NF && !seen[$0]++'
 }
 

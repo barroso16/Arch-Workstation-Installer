@@ -46,6 +46,10 @@ show_stage05_bootloader_summary() {
   log_kv "arch.conf" "$(target_arch_entry_path "${STAGE05_TARGET_ROOT}")"
   log_kv "systemd-boot EFI" "$(target_systemd_boot_efi_path "${STAGE05_TARGET_ROOT}")"
   log_kv "Instalacion" "${BOOTLOADER_INSTALL_STATUS}"
+  log_kv "Bootloader" "instalado/configurado"
+  log_kv "Firma" "${SECURE_BOOT_SIGNING_STATUS}"
+  log_kv "sbctl verify" "${SECURE_BOOT_VERIFY_STATUS}"
+  log_kv "Enrolamiento" "${SECURE_BOOT_ENROLLMENT_STATUS}"
   show_secure_boot_preparation_summary "${STAGE05_TARGET_ROOT}"
   success "Stage05 Milestone 5.6 completado."
 }

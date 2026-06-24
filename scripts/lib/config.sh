@@ -43,6 +43,7 @@ set_config_defaults() {
   INSTALL_EDITOR_PROFILE="${INSTALL_EDITOR_PROFILE:-yes}"
   INSTALL_DESKTOP_PROFILE="${INSTALL_DESKTOP_PROFILE:-yes}"
   INSTALL_NETWORK_PROFILE="${INSTALL_NETWORK_PROFILE:-yes}"
+  INSTALL_OPENSSH="${INSTALL_OPENSSH:-yes}"
   INSTALL_NVIDIA_IF_DETECTED="${INSTALL_NVIDIA_IF_DETECTED:-yes}"
 
   INSTALL_OH_MY_ZSH="${INSTALL_OH_MY_ZSH:-yes}"
@@ -177,6 +178,7 @@ validate_install_config() {
   validate_boolean_value "${INSTALL_EDITOR_PROFILE}" "INSTALL_EDITOR_PROFILE"
   validate_boolean_value "${INSTALL_DESKTOP_PROFILE}" "INSTALL_DESKTOP_PROFILE"
   validate_boolean_value "${INSTALL_NETWORK_PROFILE}" "INSTALL_NETWORK_PROFILE"
+  validate_boolean_value "${INSTALL_OPENSSH}" "INSTALL_OPENSSH"
   validate_boolean_value "${INSTALL_NVIDIA_IF_DETECTED}" "INSTALL_NVIDIA_IF_DETECTED"
   validate_boolean_value "${INSTALL_OH_MY_ZSH}" "INSTALL_OH_MY_ZSH"
   validate_boolean_value "${INSTALL_POWERLEVEL10K}" "INSTALL_POWERLEVEL10K"
@@ -219,6 +221,7 @@ show_effective_config() {
   log_kv "Editor" "${INSTALL_EDITOR_PROFILE}"
   log_kv "Escritorio" "${INSTALL_DESKTOP_PROFILE}"
   log_kv "Red" "${INSTALL_NETWORK_PROFILE}"
+  log_kv "OpenSSH" "${INSTALL_OPENSSH}"
   log_kv "NVIDIA auto" "${INSTALL_NVIDIA_IF_DETECTED}"
 
   log_header "Secure Boot"

@@ -289,18 +289,45 @@ verify_target_service_enabled() {
   local unit="$2"
   local label="$3"
 
-  if arch_chroot_run "${target_root}" systemctl is-enabled "${unit}" >/dev/null 2>&1; then
+  if target_service_enabled "${target_root}" "${unit}"; then
     verify_pass "${label} habilitado"
   else
     verify_warn "${label} no habilitado"
   fi
 }
 
+target_service_enabled() {
+  local target_root="$1"
+  local unit="$2"
+
+  arch_chroot_run "${target_root}" systemctl is-enabled "${unit}" >/dev/null 2>&1
+}
+
 verify_network_services() {
   local target_root="${1:-${TARGET_ROOT}}"
 
-  verify_target_service_enabled "${target_root}" NetworkManager.service "NetworkManager"
-  verify_target_service_enabled "${target_root}" sshd.service "OpenSSH"
+  if is_yes "${INSTALL_NETWORK_PROFILE:-yes}"; then
+    if target_service_enabled "${target_root}" NetworkManager.service; then
+      verify_pass "Mecanismo de red habilitado: NetworkManager"
+    elif target_service_enabled "${target_root}" systemd-networkd.service; then
+      verify_pass "Mecanismo de red habilitado: systemd-networkd"
+      verify_target_service_enabled "${target_root}" systemd-resolved.service "systemd-resolved"
+    else
+      verify_fail "No hay mecanismo de red habilitado: NetworkManager o systemd-networkd"
+    fi
+  else
+    verify_warn "Perfil de red desactivado; se omite verificacion de red."
+  fi
+
+  if is_yes "${INSTALL_OPENSSH:-yes}"; then
+    if target_service_enabled "${target_root}" sshd.service; then
+      verify_pass "OpenSSH habilitado"
+    else
+      verify_fail "INSTALL_OPENSSH=yes pero sshd.service no esta habilitado"
+    fi
+  else
+    verify_warn "INSTALL_OPENSSH desactivado; se omite verificacion de sshd."
+  fi
 }
 
 verify_docker() {
