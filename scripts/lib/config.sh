@@ -42,6 +42,7 @@ set_config_defaults() {
   INSTALL_SHELL_PROFILE="${INSTALL_SHELL_PROFILE:-yes}"
   INSTALL_EDITOR_PROFILE="${INSTALL_EDITOR_PROFILE:-yes}"
   INSTALL_DESKTOP_PROFILE="${INSTALL_DESKTOP_PROFILE:-yes}"
+  INSTALL_DESKTOP_ENV="${INSTALL_DESKTOP_ENV:-none}"
   INSTALL_NETWORK_PROFILE="${INSTALL_NETWORK_PROFILE:-yes}"
   INSTALL_OPENSSH="${INSTALL_OPENSSH:-yes}"
   INSTALL_NVIDIA_IF_DETECTED="${INSTALL_NVIDIA_IF_DETECTED:-yes}"
@@ -185,6 +186,11 @@ validate_install_config() {
   validate_boolean_value "${SBCTL_CREATE_KEYS}" "SBCTL_CREATE_KEYS"
   validate_boolean_value "${SBCTL_ENROLL_MICROSOFT_KEYS}" "SBCTL_ENROLL_MICROSOFT_KEYS"
 
+  case "${INSTALL_DESKTOP_ENV}" in
+    none|hyprland) ;;
+    *) die "INSTALL_DESKTOP_ENV no soportado: ${INSTALL_DESKTOP_ENV}" ;;
+  esac
+
   CONFIG_VALIDATED="yes"
   export CONFIG_VALIDATED
 }
@@ -220,6 +226,7 @@ show_effective_config() {
   log_kv "Shell" "${INSTALL_SHELL_PROFILE}"
   log_kv "Editor" "${INSTALL_EDITOR_PROFILE}"
   log_kv "Escritorio" "${INSTALL_DESKTOP_PROFILE}"
+  log_kv "Entorno grafico" "${INSTALL_DESKTOP_ENV}"
   log_kv "Red" "${INSTALL_NETWORK_PROFILE}"
   log_kv "OpenSSH" "${INSTALL_OPENSSH}"
   log_kv "NVIDIA auto" "${INSTALL_NVIDIA_IF_DETECTED}"

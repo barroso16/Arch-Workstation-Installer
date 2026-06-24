@@ -46,6 +46,26 @@ BOOTSTRAP_BASE_PACKAGES=(
   vim
 )
 
+HYPRLAND_DESKTOP_PACKAGES=(
+  hyprland
+  xdg-desktop-portal-hyprland
+  xdg-desktop-portal
+  waybar
+  wofi
+  kitty
+  hyprpaper
+  mako
+  wl-clipboard
+  grim
+  slurp
+  polkit-kde-agent
+  ttf-dejavu
+  noto-fonts
+  noto-fonts-emoji
+  mesa
+  sddm
+)
+
 profile_path() {
   local profile="$1"
 
@@ -107,6 +127,10 @@ secure_boot_bootstrap_requested() {
   is_yes "${ENABLE_SECURE_BOOT:-no}" || is_yes "${SBCTL_CREATE_KEYS:-no}"
 }
 
+hyprland_desktop_requested() {
+  [[ "${INSTALL_DESKTOP_ENV:-none}" == "hyprland" ]]
+}
+
 build_package_list() {
   ensure_install_config_loaded
 
@@ -164,6 +188,14 @@ bootstrap_base_packages() {
   done
 }
 
+hyprland_desktop_packages() {
+  local package_name
+
+  for package_name in "${HYPRLAND_DESKTOP_PACKAGES[@]}"; do
+    printf '%s\n' "${package_name}"
+  done
+}
+
 build_bootstrap_package_list() {
   ensure_install_config_loaded
 
@@ -181,6 +213,10 @@ build_bootstrap_package_list() {
 
     if is_yes "${INSTALL_OPENSSH:-no}"; then
       append_package_if_not_empty "openssh"
+    fi
+
+    if hyprland_desktop_requested; then
+      hyprland_desktop_packages
     fi
   } | awk 'NF && !seen[$0]++'
 }

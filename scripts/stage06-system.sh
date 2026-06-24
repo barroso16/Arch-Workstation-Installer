@@ -25,6 +25,8 @@ source "${STAGE06_LIB_DIR}/config.sh"
 source "${STAGE06_LIB_DIR}/chroot.sh"
 # shellcheck source=lib/hardware.sh
 source "${STAGE06_LIB_DIR}/hardware.sh"
+# shellcheck source=lib/desktop.sh
+source "${STAGE06_LIB_DIR}/desktop.sh"
 
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -189,7 +191,11 @@ configure_stage06_services() {
   enable_service_if_available "Bluetooth" "bluetooth.service" "bluetoothd"
   enable_service_if_available "Docker" "docker.service" "docker"
   enable_service_if_available "libvirt" "libvirtd.service" "virsh"
-  enable_service_if_available "SDDM" "sddm.service" "sddm"
+  if [[ "${INSTALL_DESKTOP_ENV:-none}" == "hyprland" ]]; then
+    enable_service_if_available "SDDM" "sddm.service" "sddm"
+  else
+    log_info "INSTALL_DESKTOP_ENV=${INSTALL_DESKTOP_ENV:-none}; SDDM no se habilita."
+  fi
   enable_service_if_available "CUPS" "cups.service" "cupsd"
   enable_service_if_available "Reflector" "reflector.timer" "reflector"
   enable_service_if_available "fstrim" "fstrim.timer" "fstrim"
@@ -278,6 +284,7 @@ show_stage06_summary() {
   log_section "Resumen final Stage06"
   log_kv "Usuario" "${USERNAME}"
   log_kv "Grupos" "${groups:-no detectados}"
+  log_kv "Entorno grafico" "${INSTALL_DESKTOP_ENV:-none}"
   log_kv "Contrasena usuario" "${TARGET_USER_PASSWORD_STATUS:-verificada}"
   log_kv "Contrasena root" "${TARGET_ROOT_PASSWORD_STATUS:-omitida}"
 
@@ -327,6 +334,7 @@ main() {
   validate_arch_target_root "${STAGE06_TARGET_ROOT}"
 
   ensure_stage06_user
+  configure_desktop_environment "${STAGE06_TARGET_ROOT}" "${USERNAME}"
   configure_stage06_services
   configure_stage06_integrations
   verify_stage06_virtualization

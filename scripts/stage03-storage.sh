@@ -285,6 +285,7 @@ KEYMAP=$(printf '%q' "${KEYMAP}")
 ENABLE_SECURE_BOOT=$(printf '%q' "${ENABLE_SECURE_BOOT:-no}")
 SBCTL_CREATE_KEYS=$(printf '%q' "${SBCTL_CREATE_KEYS:-yes}")
 SBCTL_ENROLL_MICROSOFT_KEYS=$(printf '%q' "${SBCTL_ENROLL_MICROSOFT_KEYS:-no}")
+INSTALL_DESKTOP_ENV=$(printf '%q' "${INSTALL_DESKTOP_ENV:-none}")
 EOF
   chown 0:0 "${state_file}"
   chmod 0600 "${state_file}"

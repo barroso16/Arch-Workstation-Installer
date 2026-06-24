@@ -420,6 +420,35 @@ verify_snapper() {
   target_file_exists "${target_root}" /etc/snapper/configs/root && verify_pass "Snapper root config existe" || verify_warn "Snapper root config no existe"
 }
 
+verify_hyprland_desktop() {
+  local target_root="${1:-${TARGET_ROOT}}"
+  local username="${2:-${USERNAME}}"
+
+  if [[ "${INSTALL_DESKTOP_ENV:-none}" == "none" ]]; then
+    verify_warn "INSTALL_DESKTOP_ENV=none; se omite verificacion grafica."
+    return 0
+  fi
+
+  if [[ "${INSTALL_DESKTOP_ENV:-none}" != "hyprland" ]]; then
+    verify_fail "INSTALL_DESKTOP_ENV no soportado en verificacion: ${INSTALL_DESKTOP_ENV}"
+    return 0
+  fi
+
+  target_package_installed "${target_root}" hyprland && verify_pass "Hyprland instalado" || verify_fail "Hyprland no instalado"
+  target_package_installed "${target_root}" waybar && verify_pass "Waybar instalado" || verify_fail "Waybar no instalado"
+  target_package_installed "${target_root}" wofi && verify_pass "Wofi instalado" || verify_fail "Wofi no instalado"
+  target_package_installed "${target_root}" kitty && verify_pass "Kitty instalado" || verify_fail "Kitty no instalado"
+  target_service_enabled "${target_root}" sddm.service && verify_pass "SDDM habilitado" || verify_fail "INSTALL_DESKTOP_ENV=hyprland pero sddm.service no esta habilitado"
+
+  target_file_exists "${target_root}" "/home/${username}/.config/hypr/hyprland.conf" &&
+    verify_pass "Config Hyprland del usuario existe" ||
+    verify_fail "Falta /home/${username}/.config/hypr/hyprland.conf"
+
+  target_file_exists "${target_root}" "/home/${username}/.config/hypr/hyprpaper.conf" &&
+    verify_pass "Config hyprpaper del usuario existe" ||
+    verify_fail "Falta /home/${username}/.config/hypr/hyprpaper.conf"
+}
+
 verify_summary() {
   log_section "Resumen de verificacion"
   log_kv "PASS" "${VERIFY_PASS_COUNT}"
@@ -455,5 +484,6 @@ run_passive_verification() {
   verify_apparmor "${target_root}"
   verify_nftables "${target_root}"
   verify_snapper "${target_root}"
+  verify_hyprland_desktop "${target_root}" "${USERNAME}"
   verify_summary
 }
