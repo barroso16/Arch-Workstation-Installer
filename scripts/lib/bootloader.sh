@@ -555,22 +555,92 @@ validate_secure_boot_environment() {
   success "Entorno Secure Boot validado sin modificar firmware."
 }
 
+secure_boot_key_directory_candidates() {
+  printf '%s\n' \
+    /var/lib/sbctl/keys \
+    /usr/share/secureboot/keys
+}
+
+secure_boot_key_host_directory() {
+  local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
+  local target_directory="$2"
+
+  validate_absolute_path "${target_root}"
+  validate_absolute_path "${target_directory}"
+  printf '%s%s\n' "${target_root%/}" "${target_directory}"
+}
+
+secure_boot_key_directory_has_modern_structure() {
+  local keys_dir="$1"
+
+  [[ -f "${keys_dir}/PK/PK.key" ]] || return 1
+  [[ -f "${keys_dir}/PK/PK.pem" ]] || return 1
+  [[ -f "${keys_dir}/KEK/KEK.key" ]] || return 1
+  [[ -f "${keys_dir}/KEK/KEK.pem" ]] || return 1
+  [[ -f "${keys_dir}/db/db.key" ]] || return 1
+  [[ -f "${keys_dir}/db/db.pem" ]] || return 1
+}
+
+secure_boot_key_directory_has_legacy_structure() {
+  local keys_dir="$1"
+  local key_name
+
+  for key_name in PK KEK db; do
+    [[ -d "${keys_dir}/${key_name}" ]] || return 1
+    find "${keys_dir}/${key_name}" -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q . || return 1
+  done
+}
+
+secure_boot_key_directory_is_complete() {
+  local keys_dir="$1"
+
+  [[ -d "${keys_dir}" ]] || return 1
+  secure_boot_key_directory_has_modern_structure "${keys_dir}" ||
+    secure_boot_key_directory_has_legacy_structure "${keys_dir}"
+}
+
 secure_boot_keys_directory() {
   local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
+  local target_directory
+  local host_directory
 
-  printf '%s/usr/share/secureboot/keys\n' "${target_root%/}"
+  while IFS= read -r target_directory; do
+    [[ -n "${target_directory}" ]] || continue
+    host_directory="$(secure_boot_key_host_directory "${target_root}" "${target_directory}")"
+    if secure_boot_key_directory_is_complete "${host_directory}"; then
+      printf '%s\n' "${host_directory}"
+      return 0
+    fi
+  done < <(secure_boot_key_directory_candidates)
+
+  return 1
+}
+
+secure_boot_key_directory_search_list() {
+  local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
+  local target_directory
+  local host_directory
+  local directories=()
+
+  while IFS= read -r target_directory; do
+    [[ -n "${target_directory}" ]] || continue
+    host_directory="$(secure_boot_key_host_directory "${target_root}" "${target_directory}")"
+    directories+=("${host_directory}")
+  done < <(secure_boot_key_directory_candidates)
+
+  printf '%s' "${directories[0]:-}"
+  if ((${#directories[@]} > 1)); then
+    printf ', %s' "${directories[@]:1}"
+  fi
+  printf '\n'
 }
 
 secure_boot_key_files_exist() {
   local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
   local keys_dir
-  local key_name
 
-  keys_dir="$(secure_boot_keys_directory "${target_root}")"
-  for key_name in PK KEK db; do
-    [[ -d "${keys_dir}/${key_name}" ]] || return 1
-    find "${keys_dir}/${key_name}" -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q . || return 1
-  done
+  keys_dir="$(secure_boot_keys_directory "${target_root}")" || return 1
+  secure_boot_key_directory_is_complete "${keys_dir}"
 }
 
 sbctl_status_reports_keys() {
@@ -585,7 +655,7 @@ verify_secure_boot_keys_exist() {
 
   validate_sbctl_available "${target_root}"
   secure_boot_key_files_exist "${target_root}" || \
-    die "No se encontraron claves sbctl completas en $(secure_boot_keys_directory "${target_root}")."
+    die "No se encontraron claves sbctl completas. Rutas revisadas: $(secure_boot_key_directory_search_list "${target_root}")."
 
   sbctl_status="$(arch_chroot_capture "${target_root}" sbctl status)"
   [[ -n "${sbctl_status}" ]] || die "sbctl status no devolvio informacion sobre las claves."
