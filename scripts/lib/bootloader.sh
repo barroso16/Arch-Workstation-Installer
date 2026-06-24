@@ -833,6 +833,29 @@ secure_boot_enrollment_requires_confirmation() {
   return 0
 }
 
+require_secure_boot_setup_mode_for_enrollment() {
+  local setup_mode
+
+  setup_mode="$(detect_setup_mode_state)"
+  case "${setup_mode}" in
+    enabled)
+      success "Setup Mode habilitado; el enrolado Secure Boot puede continuar."
+      ;;
+    disabled)
+      die "No se puede enrolar Secure Boot porque Setup Mode esta disabled. Reinicia al firmware UEFI, limpia/reset Secure Boot keys para entrar en Setup Mode y vuelve a ejecutar Stage05."
+      ;;
+    unsupported)
+      die "No se puede validar Setup Mode en este entorno. Secure Boot requiere UEFI con efivars accesible antes de enrolar claves."
+      ;;
+    unknown)
+      die "No se puede validar Setup Mode porque la variable UEFI SetupMode no esta disponible o no es legible. No se ejecutara sbctl enroll-keys."
+      ;;
+    *)
+      die "Estado Setup Mode no reconocido: ${setup_mode}. No se ejecutara sbctl enroll-keys."
+      ;;
+  esac
+}
+
 confirm_secure_boot_key_enrollment() {
   log_section "Confirmacion enrolado Secure Boot"
   log_warn "ADVERTENCIA: esta accion ejecutara sbctl enroll-keys dentro del sistema instalado."
@@ -916,6 +939,7 @@ enroll_secure_boot_keys() {
   show_secure_boot_status "${target_root}"
 
   if secure_boot_enrollment_requires_confirmation; then
+    require_secure_boot_setup_mode_for_enrollment
     confirm_secure_boot_key_enrollment
   fi
 
