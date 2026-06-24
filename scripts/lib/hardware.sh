@@ -23,6 +23,16 @@ if ! declare -F validate_install_config >/dev/null 2>&1; then
   source "${HARDWARE_LIB_DIR}/config.sh"
 fi
 
+HARDWARE_DISK_INVENTORY_LOADED="no"
+HARDWARE_DISKS=()
+
+declare -Ag HARDWARE_DISK_SIZE=()
+declare -Ag HARDWARE_DISK_MODEL=()
+declare -Ag HARDWARE_DISK_SERIAL=()
+declare -Ag HARDWARE_DISK_TYPE=()
+declare -Ag HARDWARE_DISK_TRAN=()
+declare -Ag HARDWARE_DISK_RM=()
+
 is_uefi_booted() {
   [[ -d /sys/firmware/efi/efivars ]]
 }
@@ -163,45 +173,288 @@ detect_tpm2_status() {
   fi
 }
 
-list_available_disks() {
+hardware_lsblk_pair_value() {
   local line
-  local NAME
-  local SIZE
-  local MODEL
-  local SERIAL
-  local TYPE
-  local TRAN
-  local RM
-  local warning
+  local key="$2"
+  local rest
+  local pair_key
+  local pair_value
+
+  line="$1"
+  rest="${line}"
+  while [[ "${rest}" =~ ^[[:space:]]*([A-Z_]+)=\"(([^\"\\]|\\.)*)\"(.*)$ ]]; do
+    pair_key="${BASH_REMATCH[1]}"
+    pair_value="${BASH_REMATCH[2]}"
+    rest="${BASH_REMATCH[4]}"
+
+    if [[ "${pair_key}" == "${key}" ]]; then
+      pair_value="${pair_value//\\\"/\"}"
+      pair_value="${pair_value//\\\\/\\}"
+      printf '%s\n' "${pair_value}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+hardware_reset_disk_inventory() {
+  HARDWARE_DISK_INVENTORY_LOADED="no"
+  HARDWARE_DISKS=()
+  HARDWARE_DISK_SIZE=()
+  HARDWARE_DISK_MODEL=()
+  HARDWARE_DISK_SERIAL=()
+  HARDWARE_DISK_TYPE=()
+  HARDWARE_DISK_TRAN=()
+  HARDWARE_DISK_RM=()
+}
+
+hardware_forbidden_disk_basename() {
+  local disk="$1"
+  local base
+
+  base="$(basename -- "${disk}")"
+  case "${base}" in
+    loop*|sr*|md*|dm-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+hardware_cache_disk_from_lsblk_line() {
+  local line="$1"
+  local name
+  local size
+  local model
+  local serial
+  local type
+  local tran
+  local rm
+
+  [[ "${line}" == NAME=\"* ]] || return 0
+
+  name="$(hardware_lsblk_pair_value "${line}" NAME || true)"
+  size="$(hardware_lsblk_pair_value "${line}" SIZE || true)"
+  model="$(hardware_lsblk_pair_value "${line}" MODEL || true)"
+  serial="$(hardware_lsblk_pair_value "${line}" SERIAL || true)"
+  type="$(hardware_lsblk_pair_value "${line}" TYPE || true)"
+  tran="$(hardware_lsblk_pair_value "${line}" TRAN || true)"
+  rm="$(hardware_lsblk_pair_value "${line}" RM || true)"
+
+  [[ -n "${name}" ]] || return 0
+  [[ "${type}" == "disk" ]] || return 0
+  hardware_forbidden_disk_basename "${name}" && return 0
+
+  HARDWARE_DISKS+=("${name}")
+  HARDWARE_DISK_SIZE["${name}"]="${size:-unknown}"
+  HARDWARE_DISK_MODEL["${name}"]="${model:-unknown}"
+  HARDWARE_DISK_SERIAL["${name}"]="${serial:-unknown}"
+  HARDWARE_DISK_TYPE["${name}"]="${type}"
+  HARDWARE_DISK_TRAN["${name}"]="${tran:-unknown}"
+  HARDWARE_DISK_RM["${name}"]="${rm:-0}"
+}
+
+hardware_load_disk_inventory() {
+  local line
+
+  [[ "${HARDWARE_DISK_INVENTORY_LOADED}" == "yes" ]] && return 0
+  hardware_reset_disk_inventory
 
   if command_exists lsblk; then
     while IFS= read -r line; do
-      NAME=""
-      SIZE=""
-      MODEL=""
-      SERIAL=""
-      TYPE=""
-      TRAN=""
-      RM=""
-      warning=""
-
-      [[ "${line}" == NAME=\"* ]] || continue
-
-      eval "${line}"
-
-      [[ "${TYPE}" == "disk" ]] || continue
-
-      if [[ "${TRAN}" == "usb" || "${RM}" == "1" ]]; then
-        warning="  [PELIGRO: USB/REMOVIBLE]"
-      fi
-
-      printf '%s %s %s %s %s %s %s%s\n' \
-        "${NAME}" "${SIZE}" "${MODEL:-unknown}" "${SERIAL:-unknown}" \
-        "${TYPE}" "${TRAN:-unknown}" "${RM:-0}" "${warning}"
+      hardware_cache_disk_from_lsblk_line "${line}"
     done < <(lsblk -P -dpno NAME,SIZE,MODEL,SERIAL,TYPE,TRAN,RM 2>/dev/null)
-  else
-    find /dev -maxdepth 1 -type b \( -name 'sd*' -o -name 'nvme*n*' -o -name 'vd*' \) -print 2>/dev/null
   fi
+
+  HARDWARE_DISK_INVENTORY_LOADED="yes"
+}
+
+hardware_refresh_disk_inventory() {
+  hardware_reset_disk_inventory
+  hardware_load_disk_inventory
+}
+
+hardware_disk_in_loaded_inventory() {
+  local disk="$1"
+  local candidate
+
+  for candidate in "${HARDWARE_DISKS[@]}"; do
+    [[ "${candidate}" == "${disk}" ]] && return 0
+  done
+
+  return 1
+}
+
+hardware_disk_in_inventory() {
+  local disk="$1"
+
+  hardware_load_disk_inventory
+  hardware_disk_in_loaded_inventory "${disk}"
+}
+
+hardware_disk_count() {
+  hardware_load_disk_inventory
+  printf '%s\n' "${#HARDWARE_DISKS[@]}"
+}
+
+hardware_disk_value() {
+  local disk="$1"
+  local field="$2"
+
+  hardware_load_disk_inventory
+  hardware_disk_in_loaded_inventory "${disk}" || return 1
+
+  case "${field}" in
+    size) printf '%s\n' "${HARDWARE_DISK_SIZE[$disk]}" ;;
+    model) printf '%s\n' "${HARDWARE_DISK_MODEL[$disk]}" ;;
+    serial) printf '%s\n' "${HARDWARE_DISK_SERIAL[$disk]}" ;;
+    type) printf '%s\n' "${HARDWARE_DISK_TYPE[$disk]}" ;;
+    tran) printf '%s\n' "${HARDWARE_DISK_TRAN[$disk]}" ;;
+    rm) printf '%s\n' "${HARDWARE_DISK_RM[$disk]}" ;;
+    *) die "Campo de disco no soportado: ${field}" ;;
+  esac
+}
+
+hardware_validate_installable_disk() {
+  local disk="$1"
+
+  [[ -n "${disk}" ]] || die "No se selecciono ningun disco."
+  validate_absolute_path "${disk}"
+  [[ "${disk}" == /dev/* ]] || die "El disco debe estar bajo /dev: ${disk}"
+  hardware_forbidden_disk_basename "${disk}" && die "Dispositivo no permitido para instalacion: ${disk}"
+  [[ -b "${disk}" ]] || die "El dispositivo no existe o no es bloque: ${disk}"
+  hardware_load_disk_inventory
+  hardware_disk_in_loaded_inventory "${disk}" || die "El dispositivo no es un disco instalable TYPE=disk: ${disk}"
+}
+
+hardware_show_disk_inventory_table() {
+  local disk
+  local removable
+
+  hardware_load_disk_inventory
+  log_section "Discos instalables"
+  printf '%-16s %-8s %-24s %-8s %-9s\n' "DEVICE" "SIZE" "MODEL" "TRAN" "REMOVABLE"
+  printf '%s\n' "---------------------------------------------------------------------"
+
+  for disk in "${HARDWARE_DISKS[@]}"; do
+    removable="no"
+    [[ "${HARDWARE_DISK_RM[$disk]}" == "1" ]] && removable="yes"
+    printf '%-16s %-8s %-24.24s %-8s %-9s\n' \
+      "${disk}" \
+      "${HARDWARE_DISK_SIZE[$disk]}" \
+      "${HARDWARE_DISK_MODEL[$disk]}" \
+      "${HARDWARE_DISK_TRAN[$disk]}" \
+      "${removable}"
+  done
+}
+
+hardware_show_disk_details() {
+  local disk="$1"
+  local removable="no"
+
+  hardware_validate_installable_disk "${disk}"
+  [[ "${HARDWARE_DISK_RM[$disk]}" == "1" ]] && removable="yes"
+
+  log_header "Detalle del disco"
+  log_kv "Device" "${disk}"
+  log_kv "Size" "${HARDWARE_DISK_SIZE[$disk]}"
+  log_kv "Model" "${HARDWARE_DISK_MODEL[$disk]}"
+  log_kv "Serial" "${HARDWARE_DISK_SERIAL[$disk]}"
+  log_kv "Transport" "${HARDWARE_DISK_TRAN[$disk]}"
+  log_kv "Removable" "${removable}"
+}
+
+hardware_warn_if_removable_disk() {
+  local disk="$1"
+  local tran
+  local rm
+
+  hardware_validate_installable_disk "${disk}"
+  tran="${HARDWARE_DISK_TRAN[$disk]}"
+  rm="${HARDWARE_DISK_RM[$disk]}"
+
+  if [[ "${tran}" == "usb" || "${rm}" == "1" ]]; then
+    log_warn "ADVERTENCIA MUY FUERTE: ${disk} parece ser USB/removible."
+    log_warn "Podria ser el medio Live USB. Verifica fisicamente el dispositivo antes de continuar."
+  fi
+}
+
+hardware_detect_live_iso_disk() {
+  local target
+  local source
+  local parent
+  local source_type
+
+  for target in /run/archiso/bootmnt /run/archiso/cowspace; do
+    [[ -e "${target}" ]] || continue
+    source="$(findmnt -rn -o SOURCE --target "${target}" 2>/dev/null || true)"
+    [[ "${source}" == /dev/* ]] || continue
+
+    source_type="$(lsblk -dnpo TYPE "${source}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    if [[ "${source_type}" == "disk" ]]; then
+      printf '%s\n' "${source}"
+      return 0
+    fi
+
+    parent="$(lsblk -no PKNAME "${source}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    [[ -n "${parent}" ]] || continue
+    printf '/dev/%s\n' "${parent}"
+    return 0
+  done
+
+  return 1
+}
+
+hardware_warn_if_live_iso_disk() {
+  local disk="$1"
+  local live_disk
+
+  live_disk="$(hardware_detect_live_iso_disk || true)"
+  [[ -n "${live_disk}" ]] || return 0
+
+  if [[ "$(realpath -m -- "${disk}")" == "$(realpath -m -- "${live_disk}")" ]]; then
+    log_warn "ADVERTENCIA CRITICA: ${disk} parece contener el Arch Live ISO actualmente en uso."
+    log_warn "Seleccionar este disco podria destruir el medio desde el que arrancaste."
+  fi
+}
+
+hardware_warn_if_disk_has_mounts() {
+  local disk="$1"
+  local entry
+  local mounted_entries=()
+
+  while IFS= read -r entry; do
+    [[ -n "${entry}" ]] && mounted_entries+=("${entry}")
+  done < <(
+    while IFS= read -r entry; do
+      [[ -n "${entry}" ]] || continue
+      findmnt -rn --source "${entry}" -o SOURCE,TARGET,FSTYPE 2>/dev/null || true
+    done < <(lsblk -nrpo NAME "${disk}" 2>/dev/null)
+  )
+
+  ((${#mounted_entries[@]} == 0)) && return 0
+
+  log_warn "ADVERTENCIA: el disco seleccionado contiene particiones montadas:"
+  for entry in "${mounted_entries[@]}"; do
+    log_warn "  ${entry}"
+  done
+}
+
+list_available_disks() {
+  local disk
+  local warning
+
+  hardware_load_disk_inventory
+  for disk in "${HARDWARE_DISKS[@]}"; do
+    warning=""
+    if [[ "${HARDWARE_DISK_TRAN[$disk]}" == "usb" || "${HARDWARE_DISK_RM[$disk]}" == "1" ]]; then
+      warning="  [PELIGRO: USB/REMOVIBLE]"
+    fi
+
+    printf '%s %s %s %s %s %s %s%s\n' \
+      "${disk}" "${HARDWARE_DISK_SIZE[$disk]}" "${HARDWARE_DISK_MODEL[$disk]}" \
+      "${HARDWARE_DISK_SERIAL[$disk]}" "${HARDWARE_DISK_TYPE[$disk]}" \
+      "${HARDWARE_DISK_TRAN[$disk]}" "${HARDWARE_DISK_RM[$disk]}" "${warning}"
+  done
 }
 
 is_removable_disk() {
@@ -211,6 +464,10 @@ is_removable_disk() {
   local sys_name
 
   [[ -b "${disk}" ]] || return 1
+
+  if hardware_disk_in_inventory "${disk}"; then
+    [[ "${HARDWARE_DISK_RM[$disk]}" == "1" || "${HARDWARE_DISK_TRAN[$disk]}" == "usb" ]] && return 0
+  fi
 
   if command_exists lsblk; then
     removable="$(lsblk -dpno RM "${disk}" 2>/dev/null | awk 'NR == 1 { print $1 }')"
@@ -237,7 +494,7 @@ warn_if_removable_disk() {
 }
 
 count_available_disks() {
-  list_available_disks | awk 'NF { count++ } END { print count + 0 }'
+  hardware_disk_count
 }
 
 detect_network_available() {
@@ -301,7 +558,7 @@ show_disk_summary() {
     return 0
   fi
 
-  list_available_disks
+  hardware_show_disk_inventory_table
 }
 
 show_hardware_summary() {

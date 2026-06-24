@@ -282,29 +282,19 @@ write_file_atomic() {
   local target="$1"
   local target_dir
   local tmp
-  local old_return_trap
 
   validate_absolute_path "${target}"
   require_same_filesystem_path "${target}"
 
   target_dir="$(dirname -- "${target}")"
   tmp="$(mktemp --tmpdir="${target_dir}" ".${target##*/}.tmp.XXXXXX")"
-  old_return_trap="$(trap -p RETURN || true)"
-  trap 'rm -f -- "${tmp}"' RETURN
-  cat > "${tmp}"
 
-  if [[ -e "${target}" ]]; then
-    chmod --reference="${target}" "${tmp}"
-  else
-    chmod 0644 "${tmp}"
+  if ! cat > "${tmp}"; then
+    rm -f -- "${tmp}"
+    return 1
   fi
 
-  mv -f -- "${tmp}" "${target}"
-  if [[ -n "${old_return_trap}" ]]; then
-    eval "${old_return_trap}"
-  else
-    trap - RETURN
-  fi
+  commit_atomic_file "${tmp}" "${target}" 0644
 }
 
 require_same_filesystem_path() {
@@ -320,6 +310,29 @@ require_same_filesystem_path() {
   [[ -w "${target_dir}" ]] || die "El directorio destino no es escribible: ${target_dir}"
 }
 
+commit_atomic_file() {
+  local tmp="$1"
+  local target="$2"
+  local default_mode="${3:-0644}"
+
+  if [[ -e "${target}" ]]; then
+    if ! chmod --reference="${target}" "${tmp}"; then
+      rm -f -- "${tmp}"
+      return 1
+    fi
+  else
+    if ! chmod "${default_mode}" "${tmp}"; then
+      rm -f -- "${tmp}"
+      return 1
+    fi
+  fi
+
+  if ! mv -f -- "${tmp}" "${target}"; then
+    rm -f -- "${tmp}"
+    return 1
+  fi
+}
+
 append_line_if_missing() {
   local file="$1"
   local line="$2"
@@ -332,17 +345,16 @@ replace_or_append_kv() {
   local file="$1"
   local key="$2"
   local value="$3"
+  local quoted_value
   local tmp
-  local old_return_trap
 
   validate_shell_identifier "${key}" "clave"
   touch "${file}"
+  quoted_value="$(quote_shell_value "${value}")"
 
   tmp="$(mktemp --tmpdir="$(dirname -- "${file}")" ".${file##*/}.tmp.XXXXXX")"
-  old_return_trap="$(trap -p RETURN || true)"
-  trap 'rm -f -- "${tmp}"' RETURN
 
-  awk -v key="${key}" -v value="${value}" '
+  if ! awk -v key="${key}" -v value="${quoted_value}" '
     BEGIN { replaced = 0 }
     index($0, key "=") == 1 {
       print key "=" value
@@ -355,14 +367,21 @@ replace_or_append_kv() {
         print key "=" value
       }
     }
-  ' "${file}" > "${tmp}"
-
-  chmod --reference="${file}" "${tmp}"
-  mv -f -- "${tmp}" "${file}"
-
-  if [[ -n "${old_return_trap}" ]]; then
-    eval "${old_return_trap}"
-  else
-    trap - RETURN
+  ' "${file}" > "${tmp}"; then
+    rm -f -- "${tmp}"
+    return 1
   fi
+
+  commit_atomic_file "${tmp}" "${file}" 0644
+}
+
+quote_shell_value() {
+  local value="$1"
+
+  printf "'"
+  while [[ "${value}" == *"'"* ]]; do
+    printf "%s'\"'\"'" "${value%%\'*}"
+    value="${value#*\'}"
+  done
+  printf "%s'" "${value}"
 }
