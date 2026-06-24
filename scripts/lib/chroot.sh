@@ -217,13 +217,23 @@ create_target_user() {
   local username="$2"
   local groups="${3:-wheel}"
   local shell="${4:-/bin/bash}"
+  local existing_groups
 
   validate_username_value "${username}"
+  existing_groups="$(target_existing_groups_csv "${target_root}" "${groups}")"
+
   if arch_chroot_run "${target_root}" id -u "${username}" >/dev/null 2>&1; then
     log_info "Usuario ya existente: ${username}"
   else
-    arch_chroot_run "${target_root}" useradd -m -G "${groups}" -s "${shell}" "${username}"
+    if [[ -n "${existing_groups}" ]]; then
+      arch_chroot_run "${target_root}" useradd -m -G "${existing_groups}" -s "${shell}" "${username}"
+    else
+      arch_chroot_run "${target_root}" useradd -m -s "${shell}" "${username}"
+    fi
   fi
+
+  configure_target_user_groups "${target_root}" "${username}" "${groups}"
+  ensure_target_user_home "${target_root}" "${username}"
 }
 
 configure_target_sudo() {
@@ -231,12 +241,140 @@ configure_target_sudo() {
   local sudoers_file
 
   validate_arch_target_root "${target_root}"
+  arch_chroot_run "${target_root}" command -v visudo >/dev/null
   sudoers_file="$(target_path "${target_root}" /etc/sudoers.d/00-wheel)"
 
   write_file_atomic "${sudoers_file}" <<'EOF'
 %wheel ALL=(ALL:ALL) ALL
 EOF
   chmod 0440 "${sudoers_file}"
+  arch_chroot_run "${target_root}" visudo -cf /etc/sudoers.d/00-wheel
+}
+
+target_group_exists() {
+  local target_root="$1"
+  local group="$2"
+
+  arch_chroot_capture "${target_root}" getent group "${group}" >/dev/null 2>&1
+}
+
+target_existing_groups_csv() {
+  local target_root="$1"
+  local groups="$2"
+  local group
+  local existing=()
+
+  for group in ${groups//,/ }; do
+    [[ -n "${group}" ]] || continue
+    if target_group_exists "${target_root}" "${group}"; then
+      existing+=("${group}")
+    else
+      log_warn "Grupo opcional no existe en el target y sera omitido: ${group}"
+    fi
+  done
+
+  if ((${#existing[@]} > 0)); then
+    local IFS=,
+    printf '%s\n' "${existing[*]}"
+  fi
+}
+
+configure_target_user_groups() {
+  local target_root="$1"
+  local username="$2"
+  local groups="$3"
+  local existing_groups
+
+  validate_username_value "${username}"
+  existing_groups="$(target_existing_groups_csv "${target_root}" "${groups}")"
+  [[ -n "${existing_groups}" ]] || return 0
+  arch_chroot_run "${target_root}" usermod -aG "${existing_groups}" "${username}"
+}
+
+target_user_groups() {
+  local target_root="$1"
+  local username="$2"
+
+  validate_username_value "${username}"
+  arch_chroot_capture "${target_root}" id -nG "${username}"
+}
+
+ensure_target_user_home() {
+  local target_root="$1"
+  local username="$2"
+  local home_dir
+
+  validate_username_value "${username}"
+  home_dir="$(arch_chroot_capture "${target_root}" getent passwd "${username}" | awk -F: '{print $6}')"
+  [[ -n "${home_dir}" ]] || die "No se pudo determinar el home de ${username}."
+  validate_absolute_path "${home_dir}"
+
+  arch_chroot_run "${target_root}" install -d -m 0750 -o "${username}" -g "${username}" "${home_dir}"
+}
+
+configure_target_root_password() {
+  local target_root="$1"
+
+  validate_chroot_infrastructure "${target_root}"
+  log_warn "Se solicitara la contrasena de root dentro del sistema instalado."
+  log_warn "No se almacena ni se imprime ninguna contrasena."
+  arch_chroot_run "${target_root}" passwd
+}
+
+configure_target_user_password() {
+  local target_root="$1"
+  local username="$2"
+
+  validate_username_value "${username}"
+  arch_chroot_run "${target_root}" id -u "${username}" >/dev/null
+  log_warn "Se solicitara la contrasena del usuario ${username} dentro del sistema instalado."
+  log_warn "No se almacena ni se imprime ninguna contrasena."
+  arch_chroot_run "${target_root}" passwd "${username}"
+}
+
+target_shell_exists() {
+  local target_root="$1"
+  local shell="$2"
+
+  validate_absolute_path "${shell}"
+  [[ -x "$(target_path "${target_root}" "${shell}")" ]]
+}
+
+target_select_user_shell() {
+  local target_root="$1"
+  local requested_shell="${TARGET_USER_SHELL:-${USER_SHELL:-${DEFAULT_USER_SHELL:-/bin/bash}}}"
+
+  validate_absolute_path "${requested_shell}"
+  case "${requested_shell}" in
+    */zsh)
+      if target_shell_exists "${target_root}" "${requested_shell}"; then
+        printf '%s\n' "${requested_shell}"
+      else
+        log_warn "zsh fue solicitado pero no esta instalado en el target; usando /bin/bash."
+        printf '%s\n' "/bin/bash"
+      fi
+      ;;
+    *)
+      if target_shell_exists "${target_root}" "${requested_shell}"; then
+        printf '%s\n' "${requested_shell}"
+      else
+        log_warn "Shell solicitado no existe en el target (${requested_shell}); usando /bin/bash."
+        printf '%s\n' "/bin/bash"
+      fi
+      ;;
+  esac
+}
+
+ensure_target_shell_allowed() {
+  local target_root="$1"
+  local shell="$2"
+  local shells_file
+
+  validate_absolute_path "${shell}"
+  target_shell_exists "${target_root}" "${shell}" || die "Shell no existe en el target: ${shell}"
+  shells_file="$(target_path "${target_root}" /etc/shells)"
+  touch "${shells_file}"
+  append_line_if_missing "${shells_file}" "${shell}"
 }
 
 configure_target_hostname() {
@@ -401,24 +539,43 @@ configure_target_localization() {
 
 configure_target_passwords() {
   local target_root="$1"
+  local username="${2:-${USERNAME}}"
 
-  : "${target_root}"
-  # Placeholder for Stage06 password handling.
+  if ! is_yes "${STAGE06_INTERACTIVE_PASSWORDS:-no}"; then
+    log_info "Configuracion interactiva de contrasenas omitida en esta etapa."
+    return 0
+  fi
+
+  configure_target_root_password "${target_root}"
+  configure_target_user_password "${target_root}" "${username}"
 }
 
 configure_target_shell() {
   local target_root="$1"
+  local username="${2:-${USERNAME}}"
+  local selected_shell
 
-  : "${target_root}"
-  # Placeholder for Stage06 shell customization.
+  if ! is_yes "${STAGE06_CONFIGURE_SHELL:-no}"; then
+    log_info "Configuracion de shell de usuario omitida en esta etapa."
+    return 0
+  fi
+
+  validate_username_value "${username}"
+  selected_shell="$(target_select_user_shell "${target_root}")"
+  ensure_target_shell_allowed "${target_root}" "${selected_shell}"
+  arch_chroot_run "${target_root}" usermod -s "${selected_shell}" "${username}"
+  TARGET_SELECTED_SHELL="${selected_shell}"
+  export TARGET_SELECTED_SHELL
 }
 
 configure_target_users() {
   local target_root="$1"
+  local username="${2:-${USERNAME}}"
+  local groups="${3:-wheel audio video storage input network}"
 
-  create_target_user "${target_root}" "${USERNAME}" "wheel" "/bin/bash"
-  configure_target_passwords "${target_root}"
-  configure_target_shell "${target_root}"
+  create_target_user "${target_root}" "${username}" "${groups}" "/bin/bash"
+  configure_target_passwords "${target_root}" "${username}"
+  configure_target_shell "${target_root}" "${username}"
   configure_target_sudo "${target_root}"
 }
 
@@ -437,6 +594,5 @@ configure_target_base_system() {
 
   configure_target_identity "${target_root}"
   configure_target_localization "${target_root}"
-  configure_target_users "${target_root}"
   configure_target_initramfs "${target_root}"
 }
