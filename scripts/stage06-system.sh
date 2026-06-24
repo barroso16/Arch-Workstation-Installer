@@ -72,8 +72,7 @@ record_stage06_warning() {
 target_command_exists_stage06() {
   local command_name="$1"
 
-  [[ "${command_name}" =~ ^[A-Za-z0-9_.+-]+$ ]] || die "Comando invalido: ${command_name}"
-  arch_chroot_run "${STAGE06_TARGET_ROOT}" command -v "${command_name}" >/dev/null 2>&1
+  target_command_exists "${STAGE06_TARGET_ROOT}" "${command_name}"
 }
 
 stage06_target_group_exists() {

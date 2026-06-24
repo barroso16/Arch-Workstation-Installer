@@ -170,6 +170,15 @@ arch_chroot_exit_code() {
   printf '%s\n' "${CHROOT_LAST_EXIT_CODE}"
 }
 
+target_command_exists() {
+  local target_root="$1"
+  local command_name="$2"
+  local command_check='command -v "$1"'
+
+  [[ "${command_name}" =~ ^[A-Za-z0-9_.+-]+$ ]] || die "Comando invalido: ${command_name}"
+  arch_chroot_capture "${target_root}" /usr/bin/env bash -c "${command_check}" _ "${command_name}" >/dev/null 2>&1
+}
+
 write_target_file() {
   local target_root="$1"
   local destination="$2"
@@ -246,7 +255,7 @@ configure_target_sudo() {
 
   validate_arch_target_root "${target_root}"
   ensure_target_group_exists "${target_root}" wheel
-  arch_chroot_run "${target_root}" command -v visudo >/dev/null
+  target_command_exists "${target_root}" visudo || die "visudo no esta disponible dentro del target."
   sudoers_file="$(target_path "${target_root}" /etc/sudoers.d/10-wheel)"
 
   write_file_atomic "${sudoers_file}" <<'EOF'
@@ -380,7 +389,7 @@ apply_target_password_with_chpasswd() {
   local username="$2"
   local password="$3"
 
-  arch_chroot_run "${target_root}" command -v chpasswd >/dev/null
+  target_command_exists "${target_root}" chpasswd || die "chpasswd no esta disponible dentro del target."
   printf '%s:%s\n' "${username}" "${password}" | arch_chroot_run "${target_root}" chpasswd
 }
 

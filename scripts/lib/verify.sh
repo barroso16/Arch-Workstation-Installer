@@ -76,15 +76,6 @@ target_file_exists() {
   [[ -e "$(target_path "${target_root}" "${path}")" ]]
 }
 
-target_command_exists() {
-  local target_root="$1"
-  local command_name="$2"
-
-  validate_arch_target_root "${target_root}"
-  require_command arch-chroot
-  arch-chroot "${target_root}" command -v "${command_name}" >/dev/null 2>&1
-}
-
 target_package_installed() {
   local target_root="$1"
   local package_name="$2"

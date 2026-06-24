@@ -137,7 +137,7 @@ target_has_bootctl() {
   local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
 
   [[ -x "${target_root%/}/usr/bin/bootctl" ]] && return 0
-  arch_chroot_capture "${target_root}" command -v bootctl >/dev/null 2>&1
+  target_command_exists "${target_root}" bootctl
 }
 
 target_has_systemd_package() {
@@ -486,7 +486,7 @@ target_has_sbctl() {
   local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
 
   [[ -x "${target_root%/}/usr/bin/sbctl" ]] && return 0
-  arch_chroot_capture "${target_root}" command -v sbctl >/dev/null 2>&1
+  target_command_exists "${target_root}" sbctl
 }
 
 detect_efi_variable_state() {

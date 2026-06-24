@@ -104,8 +104,7 @@ target_file_exists_stage07() {
 target_command_exists_stage07() {
   local command_name="$1"
 
-  [[ "${command_name}" =~ ^[A-Za-z0-9_.+-]+$ ]] || die "Comando invalido: ${command_name}"
-  arch_chroot_run "${STAGE07_TARGET_ROOT}" command -v "${command_name}" >/dev/null 2>&1
+  target_command_exists "${STAGE07_TARGET_ROOT}" "${command_name}"
 }
 
 target_unit_exists_stage07() {
