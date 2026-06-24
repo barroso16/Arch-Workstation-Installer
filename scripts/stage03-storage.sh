@@ -63,6 +63,7 @@ require_stage03_commands() {
     realpath \
     sfdisk \
     sleep \
+    stat \
     udevadm \
     umount \
     wipefs \
@@ -281,10 +282,33 @@ USERNAME=$(printf '%q' "${USERNAME}")
 TIMEZONE=$(printf '%q' "${TIMEZONE}")
 LOCALE=$(printf '%q' "${LOCALE}")
 KEYMAP=$(printf '%q' "${KEYMAP}")
+ENABLE_SECURE_BOOT=$(printf '%q' "${ENABLE_SECURE_BOOT:-no}")
+SBCTL_CREATE_KEYS=$(printf '%q' "${SBCTL_CREATE_KEYS:-yes}")
+SBCTL_ENROLL_MICROSOFT_KEYS=$(printf '%q' "${SBCTL_ENROLL_MICROSOFT_KEYS:-no}")
 EOF
   chown 0:0 "${state_file}"
   chmod 0600 "${state_file}"
   require_readable_file "${state_file}"
+}
+
+verify_stage03_target_install_state() {
+  local state_file="${STAGE03_TARGET_INSTALL_STATE_FILE}"
+  local mode
+  local owner
+
+  require_readable_file "${state_file}"
+  mode="$(stat -c '%a' "${state_file}")"
+  owner="$(stat -c '%u:%g' "${state_file}")"
+
+  [[ "${mode}" == "600" ]] || die "${state_file} debe tener permisos 600; permisos actuales: ${mode}"
+  [[ "${owner}" == "0:0" ]] || die "${state_file} debe pertenecer a root:root; owner actual: ${owner}"
+}
+
+persist_stage03_install_state_contract() {
+  log_step "Escribiendo contrato persistente del instalador en ${STAGE03_TARGET_INSTALL_STATE_FILE}"
+  write_stage03_target_install_state
+  verify_stage03_target_install_state
+  success "Contrato persistente del instalador disponible para Stage06/07/08."
 }
 
 show_stage03_summary() {
@@ -331,7 +355,7 @@ main() {
   restore_stage03_default_error_trap
 
   write_stage03_storage_state
-  write_stage03_target_install_state
+  persist_stage03_install_state_contract
   show_stage03_summary
 }
 

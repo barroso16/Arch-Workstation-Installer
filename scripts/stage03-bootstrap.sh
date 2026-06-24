@@ -45,7 +45,7 @@ require_arch_live_iso() {
 }
 
 require_stage03_commands() {
-  require_command pacstrap genfstab findmnt cryptsetup blkid
+  require_command pacstrap genfstab findmnt cryptsetup blkid chown
 }
 
 load_stage03_storage_state() {
@@ -213,8 +213,12 @@ USERNAME=$(printf '%q' "${USERNAME}")
 TIMEZONE=$(printf '%q' "${TIMEZONE}")
 LOCALE=$(printf '%q' "${LOCALE}")
 KEYMAP=$(printf '%q' "${KEYMAP}")
+ENABLE_SECURE_BOOT=$(printf '%q' "${ENABLE_SECURE_BOOT:-no}")
+SBCTL_CREATE_KEYS=$(printf '%q' "${SBCTL_CREATE_KEYS:-yes}")
+SBCTL_ENROLL_MICROSOFT_KEYS=$(printf '%q' "${SBCTL_ENROLL_MICROSOFT_KEYS:-no}")
 PACKAGES_FILE=$(printf '%q' "${STAGE03_PACKAGES_FILE}")
 EOF
+  chown 0:0 "${state_file}"
   chmod 0600 "${state_file}"
 }
 
