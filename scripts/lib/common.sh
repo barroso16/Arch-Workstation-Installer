@@ -124,7 +124,22 @@ is_block_device() {
 
 is_mounted() {
   local path="$1"
-  findmnt --target "${path}" >/dev/null 2>&1
+
+  if command_exists mountpoint; then
+    mountpoint -q -- "${path}"
+    return $?
+  fi
+
+  findmnt --mountpoint "${path}" >/dev/null 2>&1
+}
+
+path_has_mount_under() {
+  local path="$1"
+  local mount_count
+
+  require_command findmnt awk
+  mount_count="$(findmnt -R -rn -o TARGET "${path}" 2>/dev/null | awk -v root="${path}" '$0 != root { count++ } END { print count + 0 }')"
+  [[ "${mount_count}" -gt 0 ]]
 }
 
 trim() {
