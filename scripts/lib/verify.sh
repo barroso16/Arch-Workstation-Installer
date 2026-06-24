@@ -85,6 +85,47 @@ target_command_exists() {
   arch-chroot "${target_root}" command -v "${command_name}" >/dev/null 2>&1
 }
 
+target_package_installed() {
+  local target_root="$1"
+  local package_name="$2"
+
+  validate_arch_target_root "${target_root}"
+  require_command arch-chroot
+  arch_chroot_run "${target_root}" pacman -Q "${package_name}" >/dev/null 2>&1
+}
+
+target_has_lts_modules() {
+  local target_root="$1"
+  local modules_dir
+  local module_dir
+
+  modules_dir="$(target_path "${target_root}" /usr/lib/modules)"
+  [[ -d "${modules_dir}" ]] || return 1
+
+  for module_dir in "${modules_dir}"/*-lts; do
+    [[ -d "${module_dir}" ]] && return 0
+  done
+
+  return 1
+}
+
+linux_lts_required_by_config() {
+  is_yes "${INSTALL_LINUX_LTS:-no}" ||
+    is_yes "${INSTALL_LTS_KERNEL:-no}" ||
+    is_yes "${REQUIRE_LINUX_LTS:-no}" ||
+    is_yes "${ENABLE_LINUX_LTS:-no}"
+}
+
+linux_lts_expected() {
+  local target_root="$1"
+
+  linux_lts_required_by_config && return 0
+  target_package_installed "${target_root}" linux-lts && return 0
+  target_has_lts_modules "${target_root}" && return 0
+
+  return 1
+}
+
 verify_uefi() {
   if is_uefi_booted; then
     verify_pass "UEFI detectado"
@@ -214,9 +255,14 @@ verify_kernels_and_initramfs() {
   local target_root="${1:-${TARGET_ROOT}}"
 
   target_file_exists "${target_root}" /boot/vmlinuz-linux && verify_pass "Kernel linux existe" || verify_fail "Falta /boot/vmlinuz-linux"
-  target_file_exists "${target_root}" /boot/vmlinuz-linux-lts && verify_pass "Kernel linux-lts existe" || verify_fail "Falta /boot/vmlinuz-linux-lts"
   target_file_exists "${target_root}" /boot/initramfs-linux.img && verify_pass "Initramfs linux existe" || verify_fail "Falta /boot/initramfs-linux.img"
-  target_file_exists "${target_root}" /boot/initramfs-linux-lts.img && verify_pass "Initramfs linux-lts existe" || verify_fail "Falta /boot/initramfs-linux-lts.img"
+
+  if linux_lts_expected "${target_root}"; then
+    target_file_exists "${target_root}" /boot/vmlinuz-linux-lts && verify_pass "Kernel linux-lts existe" || verify_fail "Falta /boot/vmlinuz-linux-lts"
+    target_file_exists "${target_root}" /boot/initramfs-linux-lts.img && verify_pass "Initramfs linux-lts existe" || verify_fail "Falta /boot/initramfs-linux-lts.img"
+  else
+    verify_warn "linux-lts no instalado; se omite verificacion de kernel LTS."
+  fi
 }
 
 verify_systemd_boot() {
