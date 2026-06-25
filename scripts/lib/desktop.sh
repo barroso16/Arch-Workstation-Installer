@@ -30,6 +30,9 @@ if ! declare -F arch_chroot_run >/dev/null 2>&1; then
 fi
 
 DESKTOP_WALLPAPER_PATH="/usr/share/backgrounds/arch-workstation/default-wallpaper.png"
+HYPRLAND_START_WRAPPER="/usr/local/bin/arch-workstation-start-hyprland"
+HYPRLAND_SESSION_FILE="/usr/share/wayland-sessions/arch-workstation-hyprland.desktop"
+HYPRLAND_SDDM_CONFIG="/etc/sddm.conf.d/10-arch-workstation.conf"
 
 desktop_env_is_hyprland() {
   [[ "${INSTALL_DESKTOP_ENV:-none}" == "hyprland" ]]
@@ -73,7 +76,11 @@ create_hyprland_user_directories() {
 create_hyprland_system_directories() {
   local target_root="$1"
 
-  arch_chroot_run "${target_root}" install -d -m 0755 /usr/share/backgrounds/arch-workstation
+  arch_chroot_run "${target_root}" install -d -m 0755 \
+    /usr/local/bin \
+    /usr/share/backgrounds/arch-workstation \
+    /usr/share/wayland-sessions \
+    /etc/sddm.conf.d
 }
 
 write_hyprland_config() {
@@ -256,6 +263,77 @@ default-timeout=6000
 EOF
 }
 
+write_hyprland_start_wrapper() {
+  local target_root="$1"
+
+  write_target_file "${target_root}" "${HYPRLAND_START_WRAPPER}" <<'EOF'
+#!/usr/bin/env bash
+# Start Hyprland with a conservative VMware software-rendering fallback.
+
+set -euo pipefail
+
+is_vmware_guest() {
+  local value
+
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    value="$(systemd-detect-virt --vm 2>/dev/null || true)"
+    [[ "${value}" == "vmware" ]] && return 0
+  fi
+
+  if [[ -r /sys/class/dmi/id/product_name ]]; then
+    value="$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)"
+    [[ "${value}" == *VMware* ]] && return 0
+  fi
+
+  if [[ -r /sys/class/dmi/id/sys_vendor ]]; then
+    value="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)"
+    [[ "${value}" == *VMware* ]] && return 0
+  fi
+
+  if command -v dmidecode >/dev/null 2>&1; then
+    value="$(dmidecode -s system-product-name 2>/dev/null || true)"
+    [[ "${value}" == *VMware* ]] && return 0
+    value="$(dmidecode -s system-manufacturer 2>/dev/null || true)"
+    [[ "${value}" == *VMware* ]] && return 0
+  fi
+
+  return 1
+}
+
+if is_vmware_guest; then
+  export WLR_RENDERER_ALLOW_SOFTWARE=1
+  export LIBGL_ALWAYS_SOFTWARE=1
+fi
+
+exec /usr/bin/start-hyprland
+EOF
+  arch_chroot_run "${target_root}" chmod 0755 "${HYPRLAND_START_WRAPPER}"
+}
+
+write_hyprland_session_file() {
+  local target_root="$1"
+
+  write_target_file "${target_root}" "${HYPRLAND_SESSION_FILE}" <<EOF
+[Desktop Entry]
+Name=Arch Workstation Hyprland
+Comment=Keyboard-first Hyprland session with VM fallback
+Exec=${HYPRLAND_START_WRAPPER}
+Type=Application
+DesktopNames=Hyprland
+EOF
+  arch_chroot_run "${target_root}" chmod 0644 "${HYPRLAND_SESSION_FILE}"
+}
+
+write_hyprland_sddm_config() {
+  local target_root="$1"
+
+  write_target_file "${target_root}" "${HYPRLAND_SDDM_CONFIG}" <<'EOF'
+[Autologin]
+Session=arch-workstation-hyprland.desktop
+EOF
+  arch_chroot_run "${target_root}" chmod 0644 "${HYPRLAND_SDDM_CONFIG}"
+}
+
 configure_hyprland_desktop() {
   local target_root="$1"
   local username="$2"
@@ -278,6 +356,9 @@ configure_hyprland_desktop() {
   write_waybar_config "${target_root}" "${username}" "${home_dir}"
   write_waybar_style "${target_root}" "${username}" "${home_dir}"
   write_mako_config "${target_root}" "${username}" "${home_dir}"
+  write_hyprland_start_wrapper "${target_root}"
+  write_hyprland_session_file "${target_root}"
+  write_hyprland_sddm_config "${target_root}"
 
   success "Configuracion inicial de Hyprland creada para ${username}."
 }

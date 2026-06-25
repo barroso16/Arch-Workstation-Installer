@@ -76,6 +76,13 @@ target_file_exists() {
   [[ -e "$(target_path "${target_root}" "${path}")" ]]
 }
 
+target_file_executable() {
+  local target_root="$1"
+  local path="$2"
+
+  [[ -x "$(target_path "${target_root}" "${path}")" ]]
+}
+
 target_package_installed() {
   local target_root="$1"
   local package_name="$2"
@@ -439,6 +446,18 @@ verify_hyprland_desktop() {
   target_package_installed "${target_root}" wofi && verify_pass "Wofi instalado" || verify_fail "Wofi no instalado"
   target_package_installed "${target_root}" kitty && verify_pass "Kitty instalado" || verify_fail "Kitty no instalado"
   target_service_enabled "${target_root}" sddm.service && verify_pass "SDDM habilitado" || verify_fail "INSTALL_DESKTOP_ENV=hyprland pero sddm.service no esta habilitado"
+
+  target_file_executable "${target_root}" /usr/local/bin/arch-workstation-start-hyprland &&
+    verify_pass "Wrapper Hyprland VMware fallback existe y es ejecutable" ||
+    verify_fail "Falta wrapper ejecutable /usr/local/bin/arch-workstation-start-hyprland"
+
+  target_file_exists "${target_root}" /usr/share/wayland-sessions/arch-workstation-hyprland.desktop &&
+    verify_pass "Sesion Wayland Arch Workstation Hyprland existe" ||
+    verify_fail "Falta /usr/share/wayland-sessions/arch-workstation-hyprland.desktop"
+
+  target_file_exists "${target_root}" /etc/sddm.conf.d/10-arch-workstation.conf &&
+    verify_pass "Config SDDM Arch Workstation existe" ||
+    verify_fail "Falta /etc/sddm.conf.d/10-arch-workstation.conf"
 
   target_file_exists "${target_root}" "/home/${username}/.config/hypr/hyprland.conf" &&
     verify_pass "Config Hyprland del usuario existe" ||
