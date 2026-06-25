@@ -53,3 +53,21 @@ Desktop.ini
 
 .DS_Store
 Arch-Workstation-Installer.zip
+*.zip
+
+# ==========================================
+# Secrets / credentials
+# ==========================================
+
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+serviceAccount.json
+secrets.json
