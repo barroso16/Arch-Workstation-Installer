@@ -466,11 +466,16 @@ verify_hyprland_desktop() {
   target_package_installed "${target_root}" wofi && verify_pass "Wofi instalado" || verify_fail "Wofi no instalado"
   target_package_installed "${target_root}" kitty && verify_pass "Kitty instalado" || verify_fail "Kitty no instalado"
   target_package_installed "${target_root}" hyprpaper && verify_pass "hyprpaper instalado" || verify_fail "hyprpaper no instalado"
+  target_package_installed "${target_root}" mako && verify_pass "Mako instalado" || verify_fail "Mako no instalado"
   target_service_enabled "${target_root}" sddm.service && verify_pass "SDDM habilitado" || verify_fail "INSTALL_DESKTOP_ENV=hyprland pero sddm.service no esta habilitado"
 
+  target_file_exists "${target_root}" /usr/local/bin/arch-workstation-start-hyprland &&
+    verify_pass "Wrapper Hyprland VMware fallback existe" ||
+    verify_fail "Falta /usr/local/bin/arch-workstation-start-hyprland"
+
   target_file_executable "${target_root}" /usr/local/bin/arch-workstation-start-hyprland &&
-    verify_pass "Wrapper Hyprland VMware fallback existe y es ejecutable" ||
-    verify_fail "Falta wrapper ejecutable /usr/local/bin/arch-workstation-start-hyprland"
+    verify_pass "Wrapper Hyprland VMware fallback es ejecutable" ||
+    verify_fail "Wrapper Hyprland VMware fallback no es ejecutable"
 
   target_file_exists "${target_root}" /usr/share/wayland-sessions/arch-workstation-hyprland.desktop &&
     verify_pass "Sesion Wayland Arch Workstation Hyprland existe" ||

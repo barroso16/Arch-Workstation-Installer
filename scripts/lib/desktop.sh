@@ -293,12 +293,12 @@ write_hyprland_start_wrapper() {
 
 set -euo pipefail
 
-is_vmware_guest() {
+is_virtualized_guest() {
   local value
 
   if command -v systemd-detect-virt >/dev/null 2>&1; then
     value="$(systemd-detect-virt --vm 2>/dev/null || true)"
-    [[ "${value}" == "vmware" ]] && return 0
+    [[ -n "${value}" && "${value}" != "none" ]] && return 0
   fi
 
   if [[ -r /sys/class/dmi/id/product_name ]]; then
@@ -321,7 +321,7 @@ is_vmware_guest() {
   return 1
 }
 
-if is_vmware_guest; then
+if is_virtualized_guest; then
   export WLR_RENDERER_ALLOW_SOFTWARE=1
   export LIBGL_ALWAYS_SOFTWARE=1
 fi
