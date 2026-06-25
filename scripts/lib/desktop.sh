@@ -83,6 +83,27 @@ create_hyprland_system_directories() {
     /etc/sddm.conf.d
 }
 
+write_default_hyprland_wallpaper() {
+  local target_root="$1"
+  local encoded_path="${DESKTOP_WALLPAPER_PATH}.b64"
+
+  write_target_file "${target_root}" "${encoded_path}" <<'EOF'
+iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAB+0lEQVR42g3PAbKjMAgAUK/gZDLZ/DSliIiISNP+3fsfbX03eNOc/qRUc/opqdX0aKn39IQEmF6UkNMiiTStltjTFkmmOdeUf3JuJT9q7i0/ewbIL8xIeeFMklfNbHnzLJH3aS4/qbRcHqX0Wp6tQC8vKIhloUJcVimsZbMiXvYoOs21pfrItZf6rBVaffWKUBesRHXlylI3rWJ196pRj2luj9R6bs/SoLZXa9jbAo2wrdSY2yZNtO3W1NsRzab5TvZn7lD6q3ZsfemdoK/YmfrGXaTv2tX64d2in9MMz3Qn4VUAKywNqMMKwAgbgTDsAqpwGJjDGeDTjJDwle8kLhWp4dqRATdEIdwZVfBQNMPT0QOvaaZXIsy0lDtJayPutAEJ0k6kTIeQKZ1G7nQFxTQzJl4yU+G13kneOgvwjqzEB7MJn8pufDlH8HuaZUlCWdYiXGVrd1J2EEU5SIzlFHGVyyRc3iFjmpWSrlm56FZVmu79TuqBaqQnq4teqmH6dh2hn2m2NRln24pJtb2ZdjvgTtpJ5myXWKi9zYbbJ+w7zc7Jt+xSfK+uzY/uBn7infSLPcTf6sP84/4N/53m2FJIjr2E1jhaWI8TwjEuupPxlhgaH4uvx2/E32keksaeh5Zx1GFtnH04jAtH0HjzGDI+Or42fn38jfHvP9mtaQEpEs83AAAAAElFTkSuQmCC
+EOF
+
+  arch_chroot_run "${target_root}" /usr/bin/env bash -euo pipefail -c '
+encoded_path="$1"
+wallpaper_path="$2"
+tmp="${wallpaper_path}.tmp.$$"
+trap '\''rm -f -- "${tmp}"'\'' EXIT
+base64 -d -- "${encoded_path}" > "${tmp}"
+chmod 0644 "${tmp}"
+mv -f -- "${tmp}" "${wallpaper_path}"
+trap - EXIT
+rm -f -- "${encoded_path}"
+' _ "${encoded_path}" "${DESKTOP_WALLPAPER_PATH}"
+}
+
 write_hyprland_config() {
   local target_root="$1"
   local username="$2"
@@ -350,6 +371,7 @@ configure_hyprland_desktop() {
   log_kv "Home" "${home_dir}"
 
   create_hyprland_system_directories "${target_root}"
+  write_default_hyprland_wallpaper "${target_root}"
   create_hyprland_user_directories "${target_root}" "${username}" "${home_dir}"
   write_hyprland_config "${target_root}" "${username}" "${home_dir}"
   write_hyprpaper_config "${target_root}" "${username}" "${home_dir}"

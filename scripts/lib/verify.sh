@@ -83,6 +83,26 @@ target_file_executable() {
   [[ -x "$(target_path "${target_root}" "${path}")" ]]
 }
 
+target_hyprpaper_wallpaper_path() {
+  local target_root="$1"
+  local username="$2"
+  local config_file
+
+  config_file="$(target_path "${target_root}" "/home/${username}/.config/hypr/hyprpaper.conf")"
+  [[ -r "${config_file}" ]] || return 1
+
+  awk -F= '
+    /^[[:space:]]*wallpaper[[:space:]]*=/ {
+      value = $2
+      sub(/^[[:space:]]*/, "", value)
+      sub(/[[:space:]]*$/, "", value)
+      sub(/^,[[:space:]]*/, "", value)
+      print value
+      exit
+    }
+  ' "${config_file}"
+}
+
 target_package_installed() {
   local target_root="$1"
   local package_name="$2"
@@ -445,6 +465,7 @@ verify_hyprland_desktop() {
   target_package_installed "${target_root}" waybar && verify_pass "Waybar instalado" || verify_fail "Waybar no instalado"
   target_package_installed "${target_root}" wofi && verify_pass "Wofi instalado" || verify_fail "Wofi no instalado"
   target_package_installed "${target_root}" kitty && verify_pass "Kitty instalado" || verify_fail "Kitty no instalado"
+  target_package_installed "${target_root}" hyprpaper && verify_pass "hyprpaper instalado" || verify_fail "hyprpaper no instalado"
   target_service_enabled "${target_root}" sddm.service && verify_pass "SDDM habilitado" || verify_fail "INSTALL_DESKTOP_ENV=hyprland pero sddm.service no esta habilitado"
 
   target_file_executable "${target_root}" /usr/local/bin/arch-workstation-start-hyprland &&
@@ -466,6 +487,14 @@ verify_hyprland_desktop() {
   target_file_exists "${target_root}" "/home/${username}/.config/hypr/hyprpaper.conf" &&
     verify_pass "Config hyprpaper del usuario existe" ||
     verify_fail "Falta /home/${username}/.config/hypr/hyprpaper.conf"
+
+  local wallpaper_path
+  wallpaper_path="$(target_hyprpaper_wallpaper_path "${target_root}" "${username}" 2>/dev/null || true)"
+  if [[ -n "${wallpaper_path}" ]] && target_file_exists "${target_root}" "${wallpaper_path}"; then
+    verify_pass "Wallpaper referenciado por hyprpaper existe"
+  else
+    verify_fail "Falta wallpaper referenciado por hyprpaper: ${wallpaper_path:-no detectado}"
+  fi
 }
 
 verify_summary() {
