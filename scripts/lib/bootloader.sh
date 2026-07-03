@@ -539,7 +539,7 @@ validate_sbctl_available() {
   local target_root="${1:-${TARGET_ROOT:-${BOOTLOADER_DEFAULT_TARGET_ROOT}}}"
 
   target_has_sbctl "${target_root}" || \
-    die "sbctl no esta disponible dentro del target. Revisa Stage04/package selection: sbctl debe instalarse cuando ENABLE_SECURE_BOOT=yes o SBCTL_CREATE_KEYS=yes."
+    die "sbctl no esta disponible dentro del target. Revisa Stage03/package selection: sbctl debe instalarse cuando ENABLE_SECURE_BOOT=yes."
   success "sbctl disponible dentro del target."
 }
 

@@ -37,7 +37,7 @@ require_stage05_commands() {
 }
 
 stage05_secure_boot_requested() {
-  is_yes "${ENABLE_SECURE_BOOT:-no}" || is_yes "${SBCTL_CREATE_KEYS:-no}"
+  is_yes "${ENABLE_SECURE_BOOT:-no}"
 }
 
 run_stage05_secure_boot_if_requested() {

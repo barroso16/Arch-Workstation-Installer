@@ -132,7 +132,7 @@ append_package_if_not_empty() {
 }
 
 secure_boot_bootstrap_requested() {
-  is_yes "${ENABLE_SECURE_BOOT:-no}" || is_yes "${SBCTL_CREATE_KEYS:-no}"
+  is_yes "${ENABLE_SECURE_BOOT:-no}"
 }
 
 hyprland_desktop_requested() {
