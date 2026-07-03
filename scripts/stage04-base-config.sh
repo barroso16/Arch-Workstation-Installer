@@ -20,8 +20,6 @@ source "${STAGE04_LIB_DIR}/logging.sh"
 source "${STAGE04_LIB_DIR}/config.sh"
 # shellcheck source=lib/chroot.sh
 source "${STAGE04_LIB_DIR}/chroot.sh"
-# shellcheck source=lib/bootloader.sh
-source "${STAGE04_LIB_DIR}/bootloader.sh"
 
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
@@ -73,16 +71,6 @@ configure_stage04_base_system() {
   configure_target_mkinitcpio_luks_btrfs "${target_root}"
 }
 
-configure_stage04_systemd_boot() {
-  local target_root="${STAGE04_TARGET_ROOT}"
-
-  log_section "Configuracion systemd-boot"
-  BOOTLOADER_SIGN_AFTER_REGEN="no"
-  export BOOTLOADER_SIGN_AFTER_REGEN
-
-  configure_systemd_boot_for_target "${target_root}"
-}
-
 show_stage04_summary() {
   log_section "Resumen final Stage04"
   log_kv "Target root" "${STAGE04_TARGET_ROOT}"
@@ -93,7 +81,7 @@ show_stage04_summary() {
   log_kv "Keymap" "${KEYMAP}"
   log_kv "Crypt name" "${CRYPT_NAME}"
   log_kv "LUKS UUID" "${LUKS_UUID}"
-  success "Stage04 completado. Stage05 no se ejecutara automaticamente."
+  success "Stage04 completado. Ejecuta Stage05 para instalar/configurar systemd-boot."
 }
 
 main() {
@@ -112,7 +100,6 @@ main() {
   validate_arch_target_root "${STAGE04_TARGET_ROOT}"
 
   configure_stage04_base_system
-  configure_stage04_systemd_boot
   validate_arch_target_root "${STAGE04_TARGET_ROOT}"
   show_stage04_summary
 }
