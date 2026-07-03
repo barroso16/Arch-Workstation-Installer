@@ -453,8 +453,18 @@ ensure_selected_theme_has_preview() {
 open_preview_required() {
   local preview_file="$1"
   local opener=""
+  local target_uid=""
+  local runtime_dir=""
+  local wayland_display="${WAYLAND_DISPLAY:-}"
 
-  if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+  target_uid="$(target_capture id -u "${USERNAME}" | tail -n 1)"
+  runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${target_uid}}"
+
+  if [[ -z "${wayland_display}" && -d "${runtime_dir}" ]]; then
+    wayland_display="$(find "${runtime_dir}" -maxdepth 1 -type s -name 'wayland-*' -printf '%f\n' 2>/dev/null | head -n 1)"
+  fi
+
+  if [[ -z "${DISPLAY:-}" && -z "${wayland_display}" ]]; then
     die "No hay sesion grafica disponible para abrir la preview. Ejecuta este selector dentro del Arch instalado con Hyprland iniciado."
   fi
 
@@ -473,7 +483,12 @@ open_preview_required() {
   [[ -n "${opener}" ]] || die "No hay visor para abrir SVG. Instala o usa xdg-open, imv, swayimg, firefox o chromium antes de aplicar temas."
 
   log_info "Abriendo preview con ${opener}: ${preview_file}"
-  "${opener}" "${preview_file}" >/dev/null 2>&1 || die "No se pudo abrir la preview con ${opener}. No se aplicara ningun tema."
+  env \
+    XDG_RUNTIME_DIR="${runtime_dir}" \
+    WAYLAND_DISPLAY="${wayland_display}" \
+    DISPLAY="${DISPLAY:-}" \
+    XAUTHORITY="${XAUTHORITY:-}" \
+    "${opener}" "${preview_file}" >/dev/null 2>&1 || die "No se pudo abrir la preview con ${opener}. No se aplicara ningun tema."
 }
 
 select_theme_if_needed() {
