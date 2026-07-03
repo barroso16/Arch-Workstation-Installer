@@ -38,6 +38,11 @@ if ! declare -F detect_setup_mode >/dev/null 2>&1; then
   source "${VERIFY_LIB_DIR}/secureboot.sh"
 fi
 
+if ! declare -F secure_boot_bootstrap_requested >/dev/null 2>&1; then
+  # shellcheck source=packages.sh
+  source "${VERIFY_LIB_DIR}/packages.sh"
+fi
+
 VERIFY_PASS_COUNT=0
 VERIFY_WARN_COUNT=0
 VERIFY_FAIL_COUNT=0
@@ -179,6 +184,11 @@ verify_setup_mode_state() {
 verify_sbctl_status() {
   local target_root="${1:-${TARGET_ROOT}}"
 
+  if ! secure_boot_bootstrap_requested; then
+    verify_warn "Secure Boot desactivado en configuracion; se omite sbctl status"
+    return 0
+  fi
+
   if ! target_has_sbctl "${target_root}"; then
     verify_fail "sbctl no instalado en target"
     return 0
@@ -193,6 +203,11 @@ verify_sbctl_status() {
 
 verify_sbctl_signatures() {
   local target_root="${1:-${TARGET_ROOT}}"
+
+  if ! secure_boot_bootstrap_requested; then
+    verify_warn "Secure Boot desactivado en configuracion; se omite sbctl verify"
+    return 0
+  fi
 
   if ! target_has_sbctl "${target_root}"; then
     verify_fail "No se puede ejecutar sbctl verify: sbctl no instalado"

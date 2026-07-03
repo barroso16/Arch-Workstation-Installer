@@ -135,14 +135,15 @@ show_stage08_final_instructions() {
   log_info "1. Revisa que no existan errores en el resumen anterior."
   log_info "2. Sal del Live ISO cuando hayas terminado las revisiones."
   log_info "3. Reinicia manualmente el equipo."
-  log_info "4. Entra en BIOS/UEFI."
-  log_info "5. Activa Secure Boot si aun no esta activado."
-  log_info "6. Arranca Arch Linux."
-  log_info "7. Ejecuta dentro de Arch:"
-  log_info "   sbctl status"
-  log_info "   sbctl verify"
+  log_info "4. Arranca Arch Linux."
+  log_info "5. Ejecuta dentro de Arch:"
   log_info "   systemctl --failed"
-  log_info "8. Verifica que no existan unidades fallidas."
+  if secure_boot_bootstrap_requested; then
+    log_info "   sbctl status"
+    log_info "   sbctl verify"
+    log_info "6. Si Secure Boot aun no esta activo, revisa BIOS/UEFI y las claves sbctl."
+  fi
+  log_info "7. Verifica que no existan unidades fallidas."
 }
 
 show_stage08_final_summary() {
