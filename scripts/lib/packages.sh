@@ -101,9 +101,17 @@ read_package_lines() {
     {
       gsub(/^[[:space:]]+/, "")
       gsub(/[[:space:]]+$/, "")
+      if ($0 ~ /[[:space:]]/) {
+        printf "Entrada de paquete invalida con espacios en %s: %s\n", FILENAME, $0 > "/dev/stderr"
+        exit 2
+      }
+      if ($0 !~ /^[A-Za-z0-9@._+-]+$/) {
+        printf "Entrada de paquete invalida en %s: %s\n", FILENAME, $0 > "/dev/stderr"
+        exit 2
+      }
       print
     }
-  ' "${file}"
+  ' "${file}" || die "Pkglist contiene entradas invalidas: ${file}"
 }
 
 append_profile_packages() {

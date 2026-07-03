@@ -1,1 +1,15 @@
-Pendiente de implementacion.
+base
+linux
+linux-lts
+linux-firmware
+base-devel
+btrfs-progs
+cryptsetup
+efibootmgr
+git
+nano
+sudo
+vim
+man-db
+man-pages
+texinfo

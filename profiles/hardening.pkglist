@@ -1,1 +1,7 @@
-Pendiente de implementacion.
+apparmor
+audit
+nftables
+ufw
+firejail
+fail2ban
+usbguard
