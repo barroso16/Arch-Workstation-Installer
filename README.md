@@ -164,6 +164,51 @@ perfil correspondiente está activado.
 
 Stage06 habilita servicios y grupos solo si los componentes ya están instalados.
 
+## Personalizacion estilo Omarchy para redteam
+
+`scripts/omarchy-redteam-customize.sh` recrea desde cero una capa visual
+inspirada en Omarchy para el entorno Hyprland del instalador.
+
+El script solo escribe configuraciones locales para Hyprland, Waybar, Mako,
+Kitty, Starship, btop, Fastfetch, Hyprlock y launchers. No instala Omarchy ni
+ejecuta sus scripts.
+
+Uso interactivo recomendado dentro del Arch instalado, con Hyprland o una sesion
+grafica activa:
+
+```bash
+sudo bash scripts/omarchy-redteam-customize.sh --target-root /
+```
+
+Ese modo genera previews SVG locales de los temas, enumera los temas por numero,
+abre obligatoriamente la imagen de ejemplo del tema elegido y pide confirmacion
+antes de aplicarlo. Si la preview no se puede abrir en pantalla, el script no
+aplica ningun tema. Si un tema no puede generar una preview SVG valida, queda
+fuera del selector y no se puede aplicar.
+
+Uso directo:
+
+```bash
+bash scripts/omarchy-redteam-customize.sh --theme tokyo-night --yes
+```
+
+Generar solo las imagenes de demostracion, sin aplicar cambios:
+
+```bash
+bash scripts/omarchy-redteam-customize.sh --preview
+```
+
+Ver temas disponibles:
+
+```bash
+bash scripts/omarchy-redteam-customize.sh --list
+```
+
+Por seguridad para redteam, se omiten deliberadamente repositorios/mirrors de
+Omarchy, AUR helpers, actualizadores remotos, webapps, weather remoto, Windows
+VM helpers, clipboard history, telemetry, subida de logs y automatizaciones de
+autenticacion.
+
 ## Troubleshooting
 
 - Si Stage02 detecta que `/mnt` ya está montado, desmonta manualmente antes de
