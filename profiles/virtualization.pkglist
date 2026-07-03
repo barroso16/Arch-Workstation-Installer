@@ -3,7 +3,7 @@ libvirt
 virt-manager
 virt-viewer
 dnsmasq
-bridge-utils
+iproute2
 edk2-ovmf
 swtpm
 open-vm-tools
