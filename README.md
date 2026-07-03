@@ -50,8 +50,10 @@ scripts/
   install.sh
   stage01-preflight.sh
   stage02-storage.sh
+  stage03-storage.sh
   stage03-bootstrap.sh
   stage04-base-config.sh
+  stage05-bootloader.sh
   stage05-secureboot.sh
   stage06-system.sh
   stage07-hardening.sh
@@ -80,13 +82,14 @@ bash scripts/stage01-preflight.sh
 ## Flujo de instalación
 
 1. `stage01-preflight.sh`: validaciones iniciales y resumen de hardware.
-2. `stage02-storage.sh`: particionado, LUKS2, Btrfs y montaje en `/mnt`.
-3. `stage03-bootstrap.sh`: `pacstrap`, `fstab`, `crypttab` y estado mínimo.
-4. `stage04-base-config.sh`: configuración base, usuario, mkinitcpio y systemd-boot.
-5. `stage05-secureboot.sh`: claves, enrolamiento, firma y hooks con `sbctl`.
-6. `stage06-system.sh`: servicios y ajustes del sistema ya instalado.
-7. `stage07-hardening.sh`: comprobaciones de hardening sin instalar paquetes.
-8. `stage08-finalize.sh`: verificación final e instrucciones de reinicio.
+2. `stage02-storage.sh`: selecciona el disco objetivo y el usuario principal; no particiona.
+3. `stage03-storage.sh`: particionado destructivo, LUKS2, Btrfs y montaje en `/mnt`.
+4. `stage03-bootstrap.sh`: `pacstrap`, `fstab`, `crypttab` y estado mínimo.
+5. `stage04-base-config.sh`: configuración base, usuario, mkinitcpio y systemd-boot.
+6. `stage05-bootloader.sh`: bootloader, claves, enrolamiento, firma y hooks con `sbctl`.
+7. `stage06-system.sh`: servicios y ajustes del sistema ya instalado.
+8. `stage07-hardening.sh`: comprobaciones de hardening sin instalar paquetes.
+9. `stage08-finalize.sh`: verificación final e instrucciones de reinicio.
 
 ## Configuración
 
