@@ -146,6 +146,10 @@ build_package_list() {
     append_profile_packages "base"
     append_package_if_not_empty "$(detect_microcode_package)"
 
+    if secure_boot_bootstrap_requested; then
+      append_package_if_not_empty "sbctl"
+    fi
+
     if is_yes "${INSTALL_NVIDIA_IF_DETECTED}" && detect_nvidia_gpu; then
       append_profile_packages "nvidia"
     fi

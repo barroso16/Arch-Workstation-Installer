@@ -3,8 +3,8 @@
 #
 # This stage is orchestration-only. It installs systemd-boot into the mounted
 # EFI System Partition using helpers from bootloader.sh, writes loader.conf and
-# arch.conf, prepares sbctl keys, signs detected boot artifacts, then enrolls
-# keys only after explicit operator confirmation.
+# arch.conf, and only prepares/signs/enrolls Secure Boot artifacts when Secure
+# Boot support is enabled in configs/install.conf.
 
 set -euo pipefail
 
@@ -34,6 +34,31 @@ require_arch_live_iso() {
 
 require_stage05_commands() {
   require_command findmnt arch-chroot
+}
+
+stage05_secure_boot_requested() {
+  is_yes "${ENABLE_SECURE_BOOT:-no}" || is_yes "${SBCTL_CREATE_KEYS:-no}"
+}
+
+run_stage05_secure_boot_if_requested() {
+  if ! stage05_secure_boot_requested; then
+    SECURE_BOOT_KEYS_STATUS="disabled"
+    SECURE_BOOT_SIGNING_STATUS="skipped"
+    SECURE_BOOT_VERIFY_STATUS="skipped"
+    SECURE_BOOT_ENROLLMENT_STATUS="skipped"
+    export SECURE_BOOT_KEYS_STATUS SECURE_BOOT_SIGNING_STATUS SECURE_BOOT_VERIFY_STATUS SECURE_BOOT_ENROLLMENT_STATUS
+    log_warn "Secure Boot desactivado en configuracion; se omite sbctl."
+    return 0
+  fi
+
+  log_step "Preparando claves Secure Boot con sbctl"
+  prepare_secure_boot_keys "${STAGE05_TARGET_ROOT}"
+
+  log_step "Firmando artefactos Secure Boot con sbctl"
+  sign_secure_boot_candidates "${STAGE05_TARGET_ROOT}"
+
+  log_step "Solicitando confirmacion y enrolando claves Secure Boot"
+  enroll_secure_boot_keys "${STAGE05_TARGET_ROOT}"
 }
 
 show_stage05_bootloader_summary() {
@@ -72,14 +97,7 @@ main() {
   log_step "Configurando loader.conf y arch.conf"
   configure_systemd_boot_loader_and_arch_entry "${STAGE05_TARGET_ROOT}"
 
-  log_step "Preparando claves Secure Boot con sbctl"
-  prepare_secure_boot_keys "${STAGE05_TARGET_ROOT}"
-
-  log_step "Firmando artefactos Secure Boot con sbctl"
-  sign_secure_boot_candidates "${STAGE05_TARGET_ROOT}"
-
-  log_step "Solicitando confirmacion y enrolando claves Secure Boot"
-  enroll_secure_boot_keys "${STAGE05_TARGET_ROOT}"
+  run_stage05_secure_boot_if_requested
 
   show_stage05_bootloader_summary
 }
