@@ -196,6 +196,14 @@ configure_stage06_services() {
   else
     log_info "INSTALL_DESKTOP_ENV=${INSTALL_DESKTOP_ENV:-none}; SDDM no se habilita."
   fi
+  if is_yes "${INSTALL_NVIDIA_IF_DETECTED:-yes}" && detect_nvidia_gpu; then
+    enable_service_if_available "NVIDIA suspend" "nvidia-suspend.service"
+    enable_service_if_available "NVIDIA hibernate" "nvidia-hibernate.service"
+    enable_service_if_available "NVIDIA resume" "nvidia-resume.service"
+    if detect_hybrid_intel_nvidia_graphics; then
+      enable_service_if_available "NVIDIA Dynamic Boost" "nvidia-powerd.service" "nvidia-powerd"
+    fi
+  fi
   enable_service_if_available "CUPS" "cups.service" "cupsd"
   enable_service_if_available "Reflector" "reflector.timer" "reflector"
   enable_service_if_available "fstrim" "fstrim.timer" "fstrim"

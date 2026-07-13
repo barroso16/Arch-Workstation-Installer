@@ -128,6 +128,32 @@ detect_nvidia_gpu() {
   lspci -nn 2>/dev/null | grep -Eiq 'NVIDIA.*(VGA|3D|Display|Graphics)|((VGA|3D|Display|Graphics).*)NVIDIA'
 }
 
+detect_amd_gpu() {
+  command_exists lspci || return 1
+  lspci -nn 2>/dev/null | grep -Eiq '(AMD|ATI).*(VGA|3D|Display|Graphics)|((VGA|3D|Display|Graphics).*)(AMD|ATI)'
+}
+
+detect_amd_gpu_model() {
+  if ! command_exists lspci; then
+    printf 'unknown\n'
+    return 0
+  fi
+
+  lspci -nn 2>/dev/null | awk '
+    BEGIN { found = 0 }
+    /(AMD|ATI)/ && /(VGA|3D|Display|Graphics)/ {
+      sub(/^[^ ]+ /, "")
+      print
+      found = 1
+    }
+    END {
+      if (found == 0) {
+        print "none"
+      }
+    }
+  '
+}
+
 detect_nvidia_gpu_model() {
   if ! command_exists lspci; then
     printf 'unknown\n'
@@ -147,6 +173,36 @@ detect_nvidia_gpu_model() {
       }
     }
   '
+}
+
+nvidia_gpu_model_upper() {
+  detect_nvidia_gpu_model | tr '[:lower:]' '[:upper:]'
+}
+
+nvidia_open_kernel_modules_preferred() {
+  local model_text
+
+  model_text="$(nvidia_gpu_model_upper)"
+  [[ "${model_text}" != "NONE" ]] || return 1
+
+  # Turing/GTX16/RTX and newer use Arch's current official open modules.
+  grep -Eq 'RTX|GTX 16|T[0-9]{3,}|A[0-9]{3,}|L[0-9]{1,2}|QUADRO RTX' <<<"${model_text}"
+}
+
+nvidia_legacy_gpu_detected() {
+  local model_text
+
+  model_text="$(nvidia_gpu_model_upper)"
+  grep -Eq 'GTX (10|9|8|7|6|5|4)[0-9]{2}|GT [0-9]{3}|QUADRO [KMP][0-9]|TESLA [KMP][0-9]' <<<"${model_text}"
+}
+
+detect_intel_display_gpu() {
+  command_exists lspci || return 1
+  lspci -nn 2>/dev/null | grep -Eiq 'Intel.*(VGA|3D|Display|Graphics)|((VGA|3D|Display|Graphics).*)Intel'
+}
+
+detect_hybrid_intel_nvidia_graphics() {
+  detect_nvidia_gpu && detect_intel_display_gpu
 }
 
 detect_tpm2() {
@@ -571,6 +627,8 @@ show_hardware_summary() {
   log_kv "Virtualizacion CPU" "$(detect_cpu_virtualization)"
   log_kv "GPU NVIDIA" "$(detect_nvidia_gpu && printf 'yes' || printf 'no')"
   log_kv "Modelo NVIDIA" "$(detect_nvidia_gpu_model | paste -sd ';' -)"
+  log_kv "GPU AMD" "$(detect_amd_gpu && printf 'yes' || printf 'no')"
+  log_kv "Modelo AMD" "$(detect_amd_gpu_model | paste -sd ';' -)"
   log_kv "TPM 2.0" "$(detect_tpm2_status)"
   log_kv "Red disponible" "$(detect_network_status)"
   log_kv "RAM" "$(detect_memory_human)"

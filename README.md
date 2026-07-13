@@ -79,6 +79,9 @@ También puedes ejecutar cada stage manualmente:
 bash scripts/stage01-preflight.sh
 ```
 
+Para instalar en un NVMe/M.2 real despues de la prueba en VMware, sigue la guia
+conservadora de hardware real: `docs/m2-real-install.md`.
+
 ## Flujo de instalación
 
 1. `stage01-preflight.sh`: validaciones iniciales y resumen de hardware.
@@ -106,6 +109,9 @@ Variables principales:
 - `EFI_SIZE`: tamaño de la partición EFI.
 - `CRYPT_NAME`: nombre del mapper LUKS.
 - `BTRFS_COMPRESS`: compresión Btrfs.
+- `INSTALL_DESKTOP_ENV`: usa `hyprland` para instalar el entorno gráfico.
+- `INSTALL_NVIDIA_IF_DETECTED`: instala la ruta NVIDIA solo si detecta esa GPU.
+- `INSTALL_AMD_IF_DETECTED`: instala Mesa, RADV y VA-API solo si detecta AMD.
 
 ## Profiles
 

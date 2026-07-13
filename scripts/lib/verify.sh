@@ -396,10 +396,50 @@ verify_libvirt_kvm() {
   fi
 }
 
+verify_cpu_microcode() {
+  local target_root="${1:-${TARGET_ROOT}}"
+  local cpu_vendor
+  local expected_blob
+  local initramfs_image
+  local microcode_package
+
+  cpu_vendor="$(detect_cpu_vendor)"
+  microcode_package="$(detect_microcode_package)"
+
+  case "${cpu_vendor}" in
+    intel) expected_blob="GenuineIntel.bin" ;;
+    amd) expected_blob="AuthenticAMD.bin" ;;
+    *)
+      verify_fail "CPU no identificada como Intel o AMD"
+      return 0
+      ;;
+  esac
+
+  target_package_installed "${target_root}" "${microcode_package}" &&
+    verify_pass "Microcodigo ${microcode_package} instalado" ||
+    verify_fail "Falta el paquete ${microcode_package} para la CPU ${cpu_vendor}"
+
+  for initramfs_image in /boot/initramfs-linux.img /boot/initramfs-linux-lts.img; do
+    target_file_exists "${target_root}" "${initramfs_image}" || continue
+    if arch_chroot_run "${target_root}" lsinitcpio --early "${initramfs_image}" 2>/dev/null | grep -q "${expected_blob}"; then
+      verify_pass "Microcodigo ${cpu_vendor} incluido en ${initramfs_image##*/}"
+    else
+      verify_fail "${initramfs_image##*/} no contiene ${expected_blob}"
+    fi
+  done
+
+  case "$(detect_cpu_virtualization)" in
+    "Intel VT-x") verify_pass "Intel VT-x disponible" ;;
+    "AMD-V") verify_pass "AMD-V disponible" ;;
+    *) verify_warn "Virtualizacion de CPU no disponible; revisa BIOS/UEFI" ;;
+  esac
+}
+
 verify_nvidia_if_installed() {
   local target_root="${1:-${TARGET_ROOT}}"
   local has_nvidia_files
   local has_nvidia_hardware
+  local mkinitcpio_conf
   local modeset
 
   if target_command_exists "${target_root}" nvidia-smi; then
@@ -423,6 +463,40 @@ verify_nvidia_if_installed() {
     verify_warn "GPU NVIDIA detectada, pero herramientas NVIDIA no estan disponibles en target"
   fi
 
+  if [[ "${has_nvidia_hardware}" == "yes" ]]; then
+    target_package_installed "${target_root}" nvidia-utils && verify_pass "nvidia-utils instalado" || verify_fail "GPU NVIDIA detectada, pero nvidia-utils no esta instalado"
+    if target_package_installed "${target_root}" nvidia-open-dkms || target_package_installed "${target_root}" nvidia-open; then
+      verify_pass "Modulos NVIDIA open oficiales instalados"
+    else
+      verify_fail "GPU NVIDIA moderna detectada, pero falta nvidia-open-dkms o nvidia-open"
+    fi
+    target_package_installed "${target_root}" egl-wayland && verify_pass "egl-wayland instalado" || verify_warn "egl-wayland no instalado; Wayland/NVIDIA puede fallar"
+    target_package_installed "${target_root}" libva-nvidia-driver && verify_pass "libva-nvidia-driver instalado" || verify_warn "libva-nvidia-driver no instalado; VA-API NVIDIA queda incompleto"
+
+    mkinitcpio_conf="$(target_path "${target_root}" /etc/mkinitcpio.conf)"
+    if grep -Eq '^MODULES=.*nvidia.*nvidia_modeset.*nvidia_uvm.*nvidia_drm' "${mkinitcpio_conf}" 2>/dev/null; then
+      verify_pass "Early KMS NVIDIA configurado en mkinitcpio"
+    else
+      verify_fail "GPU NVIDIA detectada, pero MODULES no contiene nvidia nvidia_modeset nvidia_uvm nvidia_drm"
+    fi
+
+    if detect_hybrid_intel_nvidia_graphics; then
+      grep -Eq '^MODULES=\(i915[[:space:]]+nvidia' "${mkinitcpio_conf}" 2>/dev/null &&
+        verify_pass "i915 se carga antes de NVIDIA en equipo hibrido" ||
+        verify_fail "Equipo Intel/NVIDIA hibrido sin i915 antes de NVIDIA en MODULES"
+      target_command_exists "${target_root}" prime-run && verify_pass "PRIME offload disponible" || verify_warn "Falta prime-run para ejecutar aplicaciones en la NVIDIA"
+      target_service_enabled "${target_root}" nvidia-powerd.service && verify_pass "NVIDIA Dynamic Boost habilitado" || verify_warn "nvidia-powerd no habilitado o no compatible con este portatil"
+    fi
+
+    target_file_exists "${target_root}" /etc/modprobe.d/arch-workstation-nvidia.conf &&
+      verify_pass "Modprobe NVIDIA Wayland configurado" ||
+      verify_fail "Falta /etc/modprobe.d/arch-workstation-nvidia.conf"
+
+    target_service_enabled "${target_root}" nvidia-suspend.service && verify_pass "nvidia-suspend habilitado" || verify_warn "nvidia-suspend no habilitado"
+    target_service_enabled "${target_root}" nvidia-hibernate.service && verify_pass "nvidia-hibernate habilitado" || verify_warn "nvidia-hibernate no habilitado"
+    target_service_enabled "${target_root}" nvidia-resume.service && verify_pass "nvidia-resume habilitado" || verify_warn "nvidia-resume no habilitado"
+  fi
+
   if lsmod 2>/dev/null | grep -q '^nvidia'; then
     verify_pass "Modulos NVIDIA cargados en el sistema actual"
 
@@ -438,6 +512,32 @@ verify_nvidia_if_installed() {
     fi
   elif [[ "${has_nvidia_hardware}" == "yes" ]]; then
     verify_warn "GPU NVIDIA detectada, pero modulos NVIDIA no estan cargados en el sistema actual"
+  fi
+}
+
+verify_amd_if_installed() {
+  local target_root="${1:-${TARGET_ROOT}}"
+
+  detect_amd_gpu || return 0
+
+  target_package_installed "${target_root}" mesa && verify_pass "Mesa AMD/OpenGL instalado" || verify_fail "GPU AMD detectada, pero mesa no esta instalado"
+  target_package_installed "${target_root}" vulkan-radeon && verify_pass "RADV/Vulkan AMD instalado" || verify_fail "GPU AMD detectada, pero vulkan-radeon no esta instalado"
+  target_package_installed "${target_root}" libva-mesa-driver && verify_pass "VA-API Mesa instalado" || verify_warn "libva-mesa-driver no instalado; aceleracion de video AMD incompleta"
+  target_package_installed "${target_root}" linux-firmware && verify_pass "Firmware Linux instalado para AMDGPU" || verify_fail "Falta linux-firmware para AMDGPU"
+  target_command_exists "${target_root}" vulkaninfo && verify_pass "vulkaninfo disponible para comprobar RADV" || verify_warn "vulkaninfo no disponible"
+  target_command_exists "${target_root}" vainfo && verify_pass "vainfo disponible para comprobar VA-API" || verify_warn "vainfo no disponible"
+  target_command_exists "${target_root}" radeontop && verify_pass "radeontop disponible" || verify_warn "radeontop no disponible"
+
+  if [[ -d "$(target_path "${target_root}" /usr/lib/firmware/amdgpu)" ]]; then
+    verify_pass "Firmware AMDGPU presente en target"
+  else
+    verify_warn "No se encontro /usr/lib/firmware/amdgpu en target"
+  fi
+
+  if lsmod 2>/dev/null | grep -q '^amdgpu'; then
+    verify_pass "Modulo amdgpu cargado en el sistema actual"
+  else
+    verify_warn "GPU AMD detectada, pero amdgpu no esta cargado en el Live ISO"
   fi
 }
 
@@ -462,6 +562,28 @@ verify_snapper() {
   target_file_exists "${target_root}" /etc/snapper/configs/root && verify_pass "Snapper root config existe" || verify_warn "Snapper root config no existe"
 }
 
+verify_workstation_profiles() {
+  local target_root="${1:-${TARGET_ROOT}}"
+
+  if is_yes "${INSTALL_BLUETOOTH_PROFILE:-yes}"; then
+    target_command_exists "${target_root}" bluetoothctl && verify_pass "Bluetooth tools instaladas" || verify_fail "Perfil Bluetooth activo, pero falta bluetoothctl"
+    target_service_enabled "${target_root}" bluetooth.service && verify_pass "Bluetooth habilitado" || verify_warn "bluetooth.service no habilitado"
+  fi
+
+  if is_yes "${INSTALL_PRINTING_PROFILE:-yes}"; then
+    target_command_exists "${target_root}" lp && verify_pass "CUPS tools instaladas" || verify_fail "Perfil de impresion activo, pero faltan herramientas CUPS"
+    target_service_enabled "${target_root}" cups.service && verify_pass "CUPS habilitado" || verify_warn "cups.service no habilitado"
+  fi
+
+  if is_yes "${INSTALL_MULTIMEDIA_PROFILE:-yes}"; then
+    target_command_exists "${target_root}" ffmpeg && verify_pass "FFmpeg instalado" || verify_fail "Perfil multimedia activo, pero falta ffmpeg"
+    target_command_exists "${target_root}" mpv && verify_pass "MPV instalado" || verify_fail "Perfil multimedia activo, pero falta mpv"
+    target_command_exists "${target_root}" pipewire && verify_pass "PipeWire instalado" || verify_fail "Perfil multimedia activo, pero falta PipeWire"
+  fi
+
+  target_command_exists "${target_root}" powerprofilesctl && verify_pass "Gestion de perfiles de energia instalada" || verify_warn "power-profiles-daemon no instalado"
+}
+
 verify_hyprland_desktop() {
   local target_root="${1:-${TARGET_ROOT}}"
   local username="${2:-${USERNAME}}"
@@ -477,11 +599,18 @@ verify_hyprland_desktop() {
   fi
 
   target_package_installed "${target_root}" hyprland && verify_pass "Hyprland instalado" || verify_fail "Hyprland no instalado"
+  target_command_exists "${target_root}" start-hyprland && verify_pass "start-hyprland disponible" || verify_warn "start-hyprland no disponible; se intentara Hyprland directo"
+  target_package_installed "${target_root}" xorg-xwayland && verify_pass "XWayland instalado" || verify_warn "XWayland no instalado; apps X11 pueden fallar bajo Hyprland"
   target_package_installed "${target_root}" waybar && verify_pass "Waybar instalado" || verify_fail "Waybar no instalado"
   target_package_installed "${target_root}" wofi && verify_pass "Wofi instalado" || verify_fail "Wofi no instalado"
   target_package_installed "${target_root}" kitty && verify_pass "Kitty instalado" || verify_fail "Kitty no instalado"
   target_package_installed "${target_root}" hyprpaper && verify_pass "hyprpaper instalado" || verify_fail "hyprpaper no instalado"
   target_package_installed "${target_root}" mako && verify_pass "Mako instalado" || verify_fail "Mako no instalado"
+  target_command_exists "${target_root}" firefox && verify_pass "Firefox instalado" || verify_fail "Firefox no instalado"
+  target_command_exists "${target_root}" chromium && verify_pass "Chromium instalado para integraciones Omarchy" || verify_fail "Chromium no instalado"
+  target_command_exists "${target_root}" nautilus && verify_pass "Nautilus instalado" || verify_fail "Nautilus no instalado"
+  target_command_exists "${target_root}" hyprlock && verify_pass "Hyprlock instalado" || verify_warn "Hyprlock no instalado"
+  target_command_exists "${target_root}" nm-applet && verify_pass "Applet grafico de red instalado" || verify_warn "nm-applet no instalado"
   target_service_enabled "${target_root}" sddm.service && verify_pass "SDDM habilitado" || verify_fail "INSTALL_DESKTOP_ENV=hyprland pero sddm.service no esta habilitado"
 
   target_file_exists "${target_root}" /usr/local/bin/arch-workstation-start-hyprland &&
@@ -547,11 +676,14 @@ run_passive_verification() {
   verify_systemd_boot "${target_root}"
   verify_network_services "${target_root}"
   verify_docker "${target_root}"
+  verify_cpu_microcode "${target_root}"
   verify_libvirt_kvm "${target_root}"
+  verify_amd_if_installed "${target_root}"
   verify_nvidia_if_installed "${target_root}"
   verify_apparmor "${target_root}"
   verify_nftables "${target_root}"
   verify_snapper "${target_root}"
+  verify_workstation_profiles "${target_root}"
   verify_hyprland_desktop "${target_root}" "${USERNAME}"
   verify_summary
 }

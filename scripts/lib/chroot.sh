@@ -19,6 +19,11 @@ if ! declare -F log_section >/dev/null 2>&1; then
   source "${CHROOT_LIB_DIR}/logging.sh"
 fi
 
+if ! declare -F detect_nvidia_gpu >/dev/null 2>&1; then
+  # shellcheck source=hardware.sh
+  source "${CHROOT_LIB_DIR}/hardware.sh"
+fi
+
 if ! declare -F validate_install_config >/dev/null 2>&1; then
   # shellcheck source=config.sh
   source "${CHROOT_LIB_DIR}/config.sh"
@@ -612,13 +617,32 @@ replace_target_assignment() {
 configure_target_mkinitcpio_luks_btrfs() {
   local target_root="$1"
   local mkinitcpio_conf
+  local modules="()"
 
   validate_arch_target_root "${target_root}"
   mkinitcpio_conf="$(target_path "${target_root}" /etc/mkinitcpio.conf)"
   require_readable_file "${mkinitcpio_conf}"
 
   log_step "Configurando mkinitcpio para systemd initramfs, LUKS2 y Btrfs"
-  replace_target_assignment "${mkinitcpio_conf}" "MODULES" "()"
+  if is_yes "${INSTALL_NVIDIA_IF_DETECTED:-yes}" && detect_nvidia_gpu; then
+    if detect_intel_display_gpu; then
+      modules="(i915 nvidia nvidia_modeset nvidia_uvm nvidia_drm)"
+      log_info "Graficos Intel + NVIDIA detectados; i915 se carga antes de NVIDIA."
+    else
+      modules="(nvidia nvidia_modeset nvidia_uvm nvidia_drm)"
+    fi
+    log_info "GPU NVIDIA detectada; se habilita Early KMS NVIDIA en mkinitcpio."
+    create_directory "$(target_path "${target_root}" /etc/modprobe.d)" 0755
+    write_target_file "${target_root}" /etc/modprobe.d/arch-workstation-nvidia.conf <<'EOF'
+# NVIDIA Wayland/Hyprland baseline.
+# modeset=1 is required for reliable DRM/KMS handoff; fbdev is intentionally
+# left to the distro driver default to avoid forcing fragile boot behavior.
+options nvidia_drm modeset=1
+options nvidia NVreg_PreserveVideoMemoryAllocations=1
+EOF
+  fi
+
+  replace_target_assignment "${mkinitcpio_conf}" "MODULES" "${modules}"
   replace_target_assignment "${mkinitcpio_conf}" "HOOKS" "(base systemd autodetect microcode modconf kms keyboard sd-vconsole sd-encrypt block filesystems fsck)"
   arch_chroot_run "${target_root}" mkinitcpio -P
 }

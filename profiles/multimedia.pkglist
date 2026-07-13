@@ -1,0 +1,8 @@
+ffmpeg
+mpv
+gst-libav
+gst-plugin-pipewire
+gst-plugins-base
+gst-plugins-good
+gst-plugins-bad
+gst-plugins-ugly

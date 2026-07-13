@@ -19,6 +19,8 @@ source "${STAGE01_LIB_DIR}/logging.sh"
 source "${STAGE01_LIB_DIR}/config.sh"
 # shellcheck source=lib/hardware.sh
 source "${STAGE01_LIB_DIR}/hardware.sh"
+# shellcheck source=lib/packages.sh
+source "${STAGE01_LIB_DIR}/packages.sh"
 # shellcheck source=lib/verify.sh
 source "${STAGE01_LIB_DIR}/verify.sh"
 
@@ -36,6 +38,7 @@ STAGE01_REQUIRED_COMMANDS=(
   awk
   sed
   grep
+  pacman
 )
 
 require_arch_live_iso() {
@@ -152,6 +155,10 @@ main() {
 
   show_hardware_summary
   validate_install_hardware
+  validate_cpu_package_selection
+  validate_nvidia_driver_selection
+  validate_amd_driver_selection
+  validate_configured_package_availability
 
   show_effective_config
   show_disk_summary

@@ -1,3 +1,8 @@
-nvidia
+nvidia-open-dkms
 nvidia-utils
+nvidia-prime
+egl-wayland
+libva-nvidia-driver
 nvidia-settings
+linux-headers
+linux-lts-headers

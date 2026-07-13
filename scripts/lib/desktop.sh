@@ -29,6 +29,11 @@ if ! declare -F arch_chroot_run >/dev/null 2>&1; then
   source "${DESKTOP_LIB_DIR}/chroot.sh"
 fi
 
+if ! declare -F detect_nvidia_gpu >/dev/null 2>&1; then
+  # shellcheck source=hardware.sh
+  source "${DESKTOP_LIB_DIR}/hardware.sh"
+fi
+
 DESKTOP_WALLPAPER_PATH="/usr/share/backgrounds/arch-workstation/default-wallpaper.png"
 HYPRLAND_START_WRAPPER="/usr/local/bin/arch-workstation-start-hyprland"
 HYPRLAND_SESSION_FILE="/usr/share/wayland-sessions/arch-workstation-hyprland.desktop"
@@ -116,9 +121,22 @@ $mod = SUPER
 $terminal = kitty
 $launcher = wofi --show drun
 
+monitor = ,preferred,auto,1
+
+env = XDG_CURRENT_DESKTOP,Hyprland
+env = XDG_SESSION_DESKTOP,Hyprland
+env = XDG_SESSION_TYPE,wayland
+env = GDK_BACKEND,wayland,x11
+env = QT_QPA_PLATFORM,wayland;xcb
+env = SDL_VIDEODRIVER,wayland
+env = CLUTTER_BACKEND,wayland
+env = MOZ_ENABLE_WAYLAND,1
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
 exec-once = hyprpaper
 exec-once = waybar
 exec-once = mako
+exec-once = nm-applet --indicator
 exec-once = /usr/lib/polkit-kde-authentication-agent-1
 
 input {
@@ -147,6 +165,7 @@ misc {
 
 bind = $mod, Return, exec, $terminal
 bind = $mod, D, exec, $launcher
+bind = $mod, SPACE, exec, $launcher
 bind = $mod, Q, killactive
 bind = $mod, H, movefocus, l
 bind = $mod, J, movefocus, d
@@ -156,9 +175,12 @@ bind = $mod SHIFT, H, movewindow, l
 bind = $mod SHIFT, J, movewindow, d
 bind = $mod SHIFT, K, movewindow, u
 bind = $mod SHIFT, L, movewindow, r
-bind = $mod, SPACE, togglefloating
+bind = $mod, V, togglefloating
 bind = $mod, F, fullscreen
 bind = $mod SHIFT, S, exec, grim -g "$(slurp)" - | wl-copy
+bind = $mod CTRL, L, exec, hyprlock
+bind = $mod SHIFT, F, exec, nautilus
+bind = $mod SHIFT, B, exec, firefox
 bind = $mod SHIFT, E, exit
 
 bind = $mod, 1, workspace, 1
@@ -181,6 +203,19 @@ bind = $mod SHIFT, 7, movetoworkspace, 7
 bind = $mod SHIFT, 8, movetoworkspace, 8
 bind = $mod SHIFT, 9, movetoworkspace, 9
 EOF
+
+  if is_yes "${INSTALL_NVIDIA_IF_DETECTED:-yes}" && detect_nvidia_gpu; then
+    write_target_file "${target_root}" "${home_dir}/.config/hypr/arch-workstation-nvidia.conf" <<'EOF'
+# NVIDIA/Hyprland compatibility layer generated only when NVIDIA hardware is detected.
+env = LIBVA_DRIVER_NAME,nvidia
+env = __GLX_VENDOR_LIBRARY_NAME,nvidia
+env = ELECTRON_OZONE_PLATFORM_HINT,auto
+env = NVD_BACKEND,direct
+EOF
+    arch_chroot_run "${target_root}" chown "${username}:${username}" "${home_dir}/.config/hypr/arch-workstation-nvidia.conf"
+    arch_chroot_run "${target_root}" chmod 0644 "${home_dir}/.config/hypr/arch-workstation-nvidia.conf"
+    printf '%s\n' "source = ${home_dir}/.config/hypr/arch-workstation-nvidia.conf" >> "$(target_path "${target_root}" "${home_dir}/.config/hypr/hyprland.conf")"
+  fi
 }
 
 write_hyprpaper_config() {
@@ -289,7 +324,7 @@ write_hyprland_start_wrapper() {
 
   write_target_file "${target_root}" "${HYPRLAND_START_WRAPPER}" <<'EOF'
 #!/usr/bin/env bash
-# Start Hyprland with a conservative VMware software-rendering fallback.
+# Start Hyprland as the graphical engine, with a VM-only software fallback.
 
 set -euo pipefail
 
@@ -326,7 +361,36 @@ if is_virtualized_guest; then
   export LIBGL_ALWAYS_SOFTWARE=1
 fi
 
-exec /usr/bin/start-hyprland
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Hyprland}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-Hyprland}"
+export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+export GDK_BACKEND="${GDK_BACKEND:-wayland,x11}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}"
+export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-wayland}"
+export CLUTTER_BACKEND="${CLUTTER_BACKEND:-wayland}"
+export MOZ_ENABLE_WAYLAND="${MOZ_ENABLE_WAYLAND:-1}"
+export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
+
+if command -v nvidia-smi >/dev/null 2>&1 || [[ -d /proc/driver/nvidia/gpus ]]; then
+  export LIBVA_DRIVER_NAME="${LIBVA_DRIVER_NAME:-nvidia}"
+  export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-nvidia}"
+  export NVD_BACKEND="${NVD_BACKEND:-direct}"
+fi
+
+if command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland
+fi
+
+if command -v Hyprland >/dev/null 2>&1; then
+  exec Hyprland
+fi
+
+if command -v hyprland >/dev/null 2>&1; then
+  exec hyprland
+fi
+
+printf '%s\n' "No se encontro start-hyprland, Hyprland ni hyprland en PATH." >&2
+exit 127
 EOF
   arch_chroot_run "${target_root}" chmod 0755 "${HYPRLAND_START_WRAPPER}"
 }
@@ -347,9 +411,12 @@ EOF
 
 write_hyprland_sddm_config() {
   local target_root="$1"
+  local username="$2"
 
-  write_target_file "${target_root}" "${HYPRLAND_SDDM_CONFIG}" <<'EOF'
+  validate_username_value "${username}"
+  write_target_file "${target_root}" "${HYPRLAND_SDDM_CONFIG}" <<EOF
 [Autologin]
+User=${username}
 Session=arch-workstation-hyprland.desktop
 EOF
   arch_chroot_run "${target_root}" chmod 0644 "${HYPRLAND_SDDM_CONFIG}"
@@ -380,7 +447,7 @@ configure_hyprland_desktop() {
   write_mako_config "${target_root}" "${username}" "${home_dir}"
   write_hyprland_start_wrapper "${target_root}"
   write_hyprland_session_file "${target_root}"
-  write_hyprland_sddm_config "${target_root}"
+  write_hyprland_sddm_config "${target_root}" "${username}"
 
   success "Configuracion inicial de Hyprland creada para ${username}."
 }
